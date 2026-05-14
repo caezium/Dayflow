@@ -66,7 +66,7 @@ struct MainView: View {
   @State var mutedCategoryKeys: Set<String> = []
   @State var feedbackModalVisible = false
   @State var feedbackMessage: String = ""
-  @State var feedbackShareLogs = true
+  @State var feedbackShareLogs = false
   @State var feedbackDirection: TimelineRatingDirection? = nil
   @State var feedbackActivitySnapshot: TimelineActivity? = nil
   @State var feedbackMode: TimelineFeedbackMode = .form
