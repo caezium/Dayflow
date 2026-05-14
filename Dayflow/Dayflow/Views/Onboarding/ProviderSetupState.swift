@@ -148,11 +148,11 @@ class ProviderSetupState: ObservableObject {
   }
 
   func goNext() {
-    // Save API key to keychain when moving from API key input step
-    if currentStep.contentType.isApiKeyInput && !apiKey.isEmpty {
-      guard persistGeminiAPIKey(source: "onboarding_step") else { return }
-    }
-
+    // Intentionally do NOT persist the API key here. The test step accepts
+    // the in-memory key via TestConnectionView(apiKey:), so we only commit
+    // to Keychain when the user reaches saveConfiguration() at the end of
+    // the wizard. Persisting mid-wizard mutates global provider state even
+    // when the user later bails out.
     if currentStepIndex < steps.count - 1 {
       currentStepIndex += 1
     }
@@ -166,15 +166,13 @@ class ProviderSetupState: ObservableObject {
 
   func navigateToStep(_ stepId: String) {
     if let index = steps.firstIndex(where: { $0.id == stepId }) {
-      if currentStep.contentType.isApiKeyInput && stepId != currentStep.id {
-        guard persistGeminiAPIKey(source: "onboarding_sidebar") else { return }
-      }
       // Reset test state when navigating to test step
       if stepId == "verify" || stepId == "test" {
         hasTestedConnection = false
         testSuccessful = false
       }
-      // Allow free navigation between all steps
+      // Allow free navigation between all steps; persistence is deferred
+      // until saveConfiguration() at the end of the wizard.
       currentStepIndex = index
     }
   }

@@ -448,6 +448,7 @@ struct LLMProviderSetupView: View {
             if title == "Testing" || title == "Test Connection" {
               if providerType == "gemini" {
                 TestConnectionView(
+                  apiKey: setupState.apiKey,
                   onTestComplete: { success in
                     setupState.hasTestedConnection = true
                     setupState.testSuccessful = success
@@ -614,16 +615,10 @@ struct LLMProviderSetupView: View {
   }
 
   func handleContinue() {
-    // Persist local config immediately after a successful local test when user advances
-    if activeProviderType == "ollama" {
-      if case .information(let title, _) = setupState.currentStep.contentType,
-        title == "Testing" || title == "Test Connection",
-        setupState.testSuccessful
-      {
-        persistLocalSettings()
-      }
-    }
-
+    // Persistence is intentionally deferred to saveConfiguration() at the
+    // final step. Mid-wizard persistence (formerly here for Ollama) would
+    // mutate the active LLM provider before the user finished onboarding,
+    // which silently overwrote prior settings if the user bailed out.
     if setupState.isLastStep {
       saveConfiguration()
       onComplete()

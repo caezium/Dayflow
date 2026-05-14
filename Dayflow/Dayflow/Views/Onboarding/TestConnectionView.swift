@@ -9,11 +9,17 @@ import SwiftUI
 
 struct TestConnectionView: View {
   let onTestComplete: ((Bool) -> Void)?
+  /// In-memory API key supplied by the caller. When nil, falls back to the
+  /// value stored in Keychain (used by the Settings tab, where the saved
+  /// key is the source of truth). Onboarding passes the in-flight key so
+  /// the test works without committing to Keychain until final save.
+  private let providedAPIKey: String?
 
   @State private var isTesting = false
   @State private var testResult: TestResult?
 
-  init(onTestComplete: ((Bool) -> Void)? = nil) {
+  init(apiKey: String? = nil, onTestComplete: ((Bool) -> Void)? = nil) {
+    self.providedAPIKey = apiKey
     self.onTestComplete = onTestComplete
   }
 
@@ -43,11 +49,17 @@ struct TestConnectionView: View {
   private func testConnection() {
     guard !isTesting else { return }
 
-    guard
-      let apiKey = KeychainManager.shared.retrieve(for: "gemini")?
-        .components(separatedBy: .whitespacesAndNewlines).joined(),
-      !apiKey.isEmpty
-    else {
+    let resolvedKey: String? = {
+      if let provided = providedAPIKey?
+        .components(separatedBy: .whitespacesAndNewlines).joined(), !provided.isEmpty
+      {
+        return provided
+      }
+      return KeychainManager.shared.retrieve(for: "gemini")?
+        .components(separatedBy: .whitespacesAndNewlines).joined()
+    }()
+
+    guard let apiKey = resolvedKey, !apiKey.isEmpty else {
       testResult = .failure("No API key found. Enter your API key first.")
       onTestComplete?(false)
       AnalyticsService.shared.capture(
