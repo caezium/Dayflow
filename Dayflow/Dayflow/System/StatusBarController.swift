@@ -58,7 +58,14 @@ final class StatusBarController: NSObject {
         self?.popover.performClose(nil)
       })
     )
+    // Bring the app forward so the popover renders above any fullscreen Space.
+    NSApp.activate(ignoringOtherApps: true)
     popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
-    popover.contentViewController?.view.window?.makeKey()
+    if let window = popover.contentViewController?.view.window {
+      window.collectionBehavior = [
+        .canJoinAllSpaces, .moveToActiveSpace, .fullScreenAuxiliary,
+      ]
+      window.makeKey()
+    }
   }
 }
