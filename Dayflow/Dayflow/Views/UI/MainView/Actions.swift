@@ -26,7 +26,7 @@ extension MainView {
     feedbackActivitySnapshot = activity
     feedbackDirection = direction
     feedbackMessage = ""
-    feedbackShareLogs = true
+    feedbackShareLogs = false
     feedbackMode = .form
 
     withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
