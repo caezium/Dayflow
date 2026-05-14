@@ -28,8 +28,9 @@ final class AnalyticsService {
   var isOptedIn: Bool {
     get {
       if UserDefaults.standard.object(forKey: optInKey) == nil {
-        // Default ON per product decision
-        return true
+        // Default OFF: app is marketed as private/local-first, so telemetry
+        // must be explicitly enabled by the user, not assumed.
+        return false
       }
       return UserDefaults.standard.bool(forKey: optInKey)
     }
@@ -342,18 +343,17 @@ final class AnalyticsService {
     let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? ""
     let os = ProcessInfo.processInfo.operatingSystemVersion
     let osVersion = "macOS \(os.majorVersion).\(os.minorVersion).\(os.patchVersion)"
-    let device = Host.current().localizedName ?? "Mac"
     let locale = Locale.current.identifier
     let tz = TimeZone.current.identifier
 
+    // Intentionally omit Host.current().localizedName — that's the
+    // user-supplied computer name (e.g. "Firstname's MacBook") and is PII.
     registerSuperProperties([
       "app_version": version,
       "build_number": build,
       "os_version": osVersion,
-      "device_model": device,
       "locale": locale,
       "time_zone": tz,
-        // dynamic values will be updated later as needed
     ])
   }
 
