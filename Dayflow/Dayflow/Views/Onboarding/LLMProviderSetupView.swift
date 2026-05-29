@@ -119,10 +119,7 @@ struct LLMProviderSetupView: View {
   var nextButton: some View {
     if setupState.isLastStep {
       DayflowSurfaceButton(
-        action: {
-          saveConfiguration()
-          onComplete()
-        },
+        action: handleContinue,
         content: {
           HStack(spacing: 8) {
             Image(systemName: "checkmark.circle.fill").font(.system(size: 14))
@@ -620,19 +617,30 @@ struct LLMProviderSetupView: View {
     // mutate the active LLM provider before the user finished onboarding,
     // which silently overwrote prior settings if the user bailed out.
     if setupState.isLastStep {
-      saveConfiguration()
-      onComplete()
+      if saveConfiguration() {
+        onComplete()
+      }
     } else {
       setupState.markCurrentStepCompleted()
       setupState.goNext()
     }
   }
 
-  func saveConfiguration() {
+  @discardableResult
+  func saveConfiguration() -> Bool {
     // Save API key to keychain for Gemini
-    if activeProviderType == "gemini" && !setupState.apiKey.isEmpty {
+    if activeProviderType == "gemini" {
       let cleanedKey = setupState.apiKey.components(separatedBy: .whitespacesAndNewlines).joined()
-      KeychainManager.shared.store(cleanedKey, for: "gemini")
+      if !cleanedKey.isEmpty {
+        guard setupState.persistGeminiAPIKey(source: "onboarding_final") else {
+          setupState.navigateToStep("enterkey")
+          return false
+        }
+      } else if KeychainManager.shared.retrieve(for: "gemini") == nil {
+        setupState.geminiAPIKeySaveError = "No Gemini API key is saved. Enter your API key first."
+        setupState.navigateToStep("enterkey")
+        return false
+      }
       GeminiModelPreference(primary: setupState.geminiModel).save()
     }
 
@@ -643,6 +651,7 @@ struct LLMProviderSetupView: View {
 
     // Mark setup as complete
     UserDefaults.standard.set(true, forKey: "\(activeProviderType)SetupComplete")
+    return true
   }
 
   // Persist provider choice + local settings without marking setup complete
