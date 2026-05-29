@@ -33,7 +33,11 @@ extension MainView {
       feedbackModalVisible = true
     }
 
-    let props = timelineFeedbackAnalyticsPayload(for: activity, direction: direction)
+    let props = timelineFeedbackAnalyticsPayload(
+      for: activity,
+      direction: direction,
+      includeSharedActivityContext: false
+    )
     AnalyticsService.shared.capture("timeline_summary_rated", props)
   }
 
@@ -43,7 +47,11 @@ extension MainView {
       let direction = feedbackDirection
     else { return }
 
-    var props = timelineFeedbackAnalyticsPayload(for: activity, direction: direction)
+    var props = timelineFeedbackAnalyticsPayload(
+      for: activity,
+      direction: direction,
+      includeSharedActivityContext: feedbackShareLogs
+    )
     props["feedback_message_length"] = trimmed.count
     props["share_logs_enabled"] = feedbackShareLogs
     if !trimmed.isEmpty {
@@ -293,24 +301,31 @@ extension MainView {
   }
 
   func timelineFeedbackAnalyticsPayload(
-    for activity: TimelineActivity, direction: TimelineRatingDirection
+    for activity: TimelineActivity,
+    direction: TimelineRatingDirection,
+    includeSharedActivityContext: Bool = false
   ) -> [String: Any] {
     var props: [String: Any] = [
       "thumb_direction": direction.rawValue,
-      "timeline_selected_day": dayString(selectedDate),
-      "activity_title": activity.title,
-      "activity_summary": activity.summary,
-      "activity_detailed_summary": activity.detailedSummary,
-      "activity_category": activity.category,
-      "activity_subcategory": activity.subcategory,
-      "activity_start_ts": iso8601Formatter.string(from: activity.startTime),
-      "activity_end_ts": iso8601Formatter.string(from: activity.endTime),
-      "activity_duration_seconds": Int(activity.endTime.timeIntervalSince(activity.startTime)),
-      "activity_day_bucket": AnalyticsService.shared.dayString(activity.startTime),
-      "activity_has_screenshot": activity.screenshot != nil,
-      "activity_has_video_summary": activity.videoSummaryURL != nil,
-      "timeline_share_logs_default": true,
+      "timeline_share_logs_default": false,
     ]
+
+    guard includeSharedActivityContext else { return props }
+
+    props["timeline_selected_day"] = dayString(selectedDate)
+    props["activity_title"] = activity.title
+    props["activity_summary"] = activity.summary
+    props["activity_detailed_summary"] = activity.detailedSummary
+    props["activity_category"] = activity.category
+    props["activity_subcategory"] = activity.subcategory
+    props["activity_start_ts"] = iso8601Formatter.string(from: activity.startTime)
+    props["activity_end_ts"] = iso8601Formatter.string(from: activity.endTime)
+    props["activity_duration_seconds"] = Int(activity.endTime.timeIntervalSince(activity.startTime))
+    props["activity_day_bucket"] = AnalyticsService.shared.dayString(activity.startTime)
+    props["activity_has_screenshot"] = activity.screenshot != nil
+    props["activity_has_video_summary"] = activity.videoSummaryURL != nil
+    props["activity_summary_length"] = activity.summary.count
+    props["activity_detailed_summary_length"] = activity.detailedSummary.count
 
     if let recordId = activity.recordId {
       props["activity_record_id"] = Int(recordId)
@@ -337,9 +352,6 @@ extension MainView {
     } else {
       props["activity_distractions_count"] = 0
     }
-
-    props["activity_summary_length"] = activity.summary.count
-    props["activity_detailed_summary_length"] = activity.detailedSummary.count
 
     return props
   }
