@@ -161,6 +161,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Start notification service for journal reminders
     NotificationService.shared.start()
 
+    // Start productivity stats engine + distraction nudges, and restore the
+    // floating focus timer if the user previously enabled it.
+    ProductivityStats.shared.start()
+    DistractionNudgeService.shared.start()
+    MiniTimerWindowController.shared.restoreIfEnabled()
+
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
 
