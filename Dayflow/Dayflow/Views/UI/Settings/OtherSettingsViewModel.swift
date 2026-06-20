@@ -42,6 +42,12 @@ final class OtherSettingsViewModel: ObservableObject {
       PausePresets.minutes = pausePresetMinutes
     }
   }
+  @Published var distractionNudgesEnabled: Bool {
+    didSet {
+      guard distractionNudgesEnabled != oldValue else { return }
+      ProductivityPreferences.distractionNudgesEnabled = distractionNudgesEnabled
+    }
+  }
   @Published var outputLanguageOverride: String
   @Published var isOutputLanguageOverrideSaved: Bool = true
 
@@ -64,6 +70,7 @@ final class OtherSettingsViewModel: ObservableObject {
     showDailyGoalPopups = DayGoalPreferences.showDailyGoalPopups
     saveAllTimelapsesToDisk = TimelapsePreferences.saveAllTimelapsesToDisk
     pausePresetMinutes = PausePresets.minutes
+    distractionNudgesEnabled = ProductivityPreferences.distractionNudgesEnabled
     outputLanguageOverride = LLMOutputLanguagePreferences.override
     exportStartDate = timelineDisplayDate(from: Date())
     exportEndDate = timelineDisplayDate(from: Date())

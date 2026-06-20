@@ -331,6 +331,54 @@ final class NotificationService: NSObject, ObservableObject {
     }
   }
 
+  /// Fire a gentle distraction nudge. Requests permission on demand (same flow
+  /// as the daily recap notification) so it works even before the user has
+  /// granted notifications elsewhere.
+  func sendDistractionNudge(distractionMinutes: Int) {
+    Task {
+      var settings = await center.notificationSettings()
+      var status = settings.authorizationStatus
+
+      if status == .notDetermined {
+        _ = await requestPermission()
+        settings = await center.notificationSettings()
+        status = settings.authorizationStatus
+      }
+
+      guard Self.canScheduleNotifications(for: status) else {
+        print(
+          "[NotificationService] Skipping distraction nudge: "
+            + "permission_status=\(Self.authorizationStatusName(status))"
+        )
+        return
+      }
+
+      let identifier = "nudge.distraction"
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+
+      let content = UNMutableNotificationContent()
+      content.title = "Time for a reset?"
+      content.body =
+        "About \(distractionMinutes) min of distraction in the last half hour. Want to refocus?"
+      content.sound = .default
+      content.categoryIdentifier = "distraction_nudge"
+
+      let request = UNNotificationRequest(
+        identifier: identifier,
+        content: content,
+        trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+      )
+
+      center.add(request) { error in
+        if let error {
+          print("[NotificationService] Failed to schedule distraction nudge: \(error)")
+        } else {
+          print("[NotificationService] Scheduled distraction nudge minutes=\(distractionMinutes)")
+        }
+      }
+    }
+  }
+
   func scheduleWeeklyUnlockNotification(at unlockDate: Date) async
     -> WeeklyUnlockNotificationScheduleResult
   {
@@ -537,6 +585,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
 
     let isDailyRecapNotification = identifier.hasPrefix("daily.")
     let isWeeklyUnlockNotification = identifier.hasPrefix("weekly.")
+    let isNudgeNotification = identifier.hasPrefix("nudge.")
 
     let isSupportNotification = identifier.hasPrefix("support.")
     let isFlowNotification = identifier == "flow.waitlist.reply"
@@ -549,6 +598,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     guard
       isDailyRecapNotification || isWeeklyUnlockNotification || isSupportNotification
         || isFlowNotification || isGettingStartedNotification || isProviderProblemNotification
+        || isNudgeNotification
     else {
       completionHandler()
       return
@@ -579,6 +629,11 @@ extension NotificationService: UNUserNotificationCenterDelegate {
       } else if isFlowNotification {
         AppDelegate.pendingNotificationNavigationDestination = .flow
         activateAppForNotificationTap()
+      } else if isNudgeNotification {
+        AppDelegate.pendingNotificationNavigationDestination = .daily(day: nil)
+        activateAppForNotificationTap()
+        print(
+          "[NotificationService] didReceive distraction nudge handled identifier=\(identifier)")
       } else if isSupportNotification {
         AppDelegate.pendingNotificationNavigationDestination = .support
         activateAppForNotificationTap()
@@ -650,6 +705,12 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     // Someone already looking at Dayflow sees the cards arrive; no banner needed.
     if identifier.hasPrefix("gettingStarted.") {
       completionHandler([])
+      return
+    }
+
+    if identifier.hasPrefix("nudge.") {
+      print("[NotificationService] willPresent options=banner,sound identifier=\(identifier)")
+      completionHandler([.banner, .sound])
       return
     }
 

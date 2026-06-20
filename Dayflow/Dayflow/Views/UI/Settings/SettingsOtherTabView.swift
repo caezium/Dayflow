@@ -5,6 +5,7 @@ struct SettingsOtherTabView: View {
   @ObservedObject var launchAtLoginManager: LaunchAtLoginManager
   @ObservedObject private var dailyBrief = DailyBriefStore.shared
   @AppStorage(DayflowAppearance.storageKey) private var appearance: DayflowAppearance = .system
+  @ObservedObject private var miniTimer = MiniTimerWindowController.shared
   @FocusState private var isOutputLanguageFocused: Bool
   @State private var appLanguage = AppLanguagePreferences.selection()
 
@@ -156,13 +157,34 @@ struct SettingsOtherTabView: View {
           label: String(localized: "Getting started guide"),
           subtitle: String(
             localized:
-              "Replay the welcome tour and bring back the first-day checklist on your timeline."),
-          showsDivider: false
+              "Replay the welcome tour and bring back the first-day checklist on your timeline.")
         ) {
           SettingsSecondaryButton(
             title: String(localized: "Show again"),
             action: { GettingStarted.replay() }
           )
+        }
+
+        SettingsRow(
+          label: "Show focus timer",
+          subtitle:
+            "A small floating pill that counts up today's focused time live. Drag it anywhere; toggle it from the menu bar too."
+        ) {
+          SettingsToggle(
+            isOn: Binding(
+              get: { miniTimer.isVisible },
+              set: { miniTimer.setVisible($0) }
+            )
+          )
+        }
+
+        SettingsRow(
+          label: "Distraction nudges",
+          subtitle:
+            "Gentle reminder when you've spent about 20 minutes distracted in the last half hour. Never blocks anything, and waits at least an hour between nudges.",
+          showsDivider: false
+        ) {
+          SettingsToggle(isOn: $viewModel.distractionNudgesEnabled)
         }
       }
     }
