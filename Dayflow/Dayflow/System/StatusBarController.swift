@@ -162,6 +162,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
 
     menu.addItem(.separator())
     menu.addItem(actionItem(String(localized: "Open Dayflow"), #selector(openDayflow)))
+    menu.addItem(
+      actionItem(
+        MiniTimerWindowController.shared.isVisible ? "Hide Focus Timer" : "Show Focus Timer",
+        #selector(toggleFocusTimer)))
     menu.addItem(actionItem(String(localized: "Open Recordings"), #selector(openRecordingsFolder)))
     menu.addItem(actionItem(String(localized: "Check for Updates"), #selector(checkForUpdates)))
     menu.addItem(.separator())
@@ -217,6 +221,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     NSApp.unhide(nil)
     MainWindowController.shared.showMainWindow()
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @objc private func toggleFocusTimer() {
+    let controller = MiniTimerWindowController.shared
+    controller.setVisible(!controller.isVisible)
   }
 
   @objc private func openRecordingsFolder() {

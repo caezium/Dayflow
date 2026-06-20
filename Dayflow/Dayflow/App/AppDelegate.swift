@@ -158,6 +158,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     SupportChatSession.shared.start()
     SupportChatSession.startFlowWaitlistMonitoring()
 
+    // Start productivity stats engine + distraction nudges, and restore the
+    // floating focus timer if the user previously enabled it.
+    ProductivityStats.shared.start()
+    DistractionNudgeService.shared.start()
+    MiniTimerWindowController.shared.restoreIfEnabled()
+
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
 
