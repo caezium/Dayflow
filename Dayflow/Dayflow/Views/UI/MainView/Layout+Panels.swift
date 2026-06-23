@@ -93,6 +93,9 @@ extension MainView {
       case .usage:
         UsageView()
           .padding(15)
+      case .tasks:
+        TasksView()
+          .padding(15)
       case .journal:
         JournalView()
           .padding(15)
