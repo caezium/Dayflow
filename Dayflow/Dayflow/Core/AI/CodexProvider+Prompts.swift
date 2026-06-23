@@ -130,7 +130,7 @@ extension CodexProvider {
           INPUTS:
           Previous cards: \(existingCardsJSON)
           New observations: \(transcriptText)
-
+          \(context.groundTruthUsage.map { "\n" + $0 + "\n" } ?? "")
           OUTPUT:
           Return ONLY a raw JSON array. No code fences, no markdown, no commentary.
 

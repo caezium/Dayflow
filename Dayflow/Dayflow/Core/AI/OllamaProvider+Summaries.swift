@@ -79,7 +79,8 @@ extension OllamaProvider {
   }
 
   private func generateSummary(
-    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?
+    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?,
+    groundTruthUsage: String? = nil
   ) async throws -> (SummaryResponse, String) {
     let observationLines: [String] = observations.map { obs in
       let startTime = formatTimestampForPrompt(obs.startTs)
@@ -116,7 +117,7 @@ extension OllamaProvider {
 
       Activity periods:
       \(observationsText)
-
+      \(groundTruthUsage.map { "\n" + $0 + "\n" } ?? "")
         Create a summary that captures what happened during this time period.
 
       \(promptSections.summary)
@@ -258,13 +259,15 @@ extension OllamaProvider {
   }
 
   func generateTitleAndSummary(
-    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?
+    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?,
+    groundTruthUsage: String? = nil
   ) async throws -> (TitleSummaryResponse, String) {
     // Step 1: Generate summary + category
     let (summaryResult, summaryLog) = try await generateSummary(
       observations: observations,
       categories: categories,
-      batchId: batchId
+      batchId: batchId,
+      groundTruthUsage: groundTruthUsage
     )
 
     // Step 2: Generate title from observations

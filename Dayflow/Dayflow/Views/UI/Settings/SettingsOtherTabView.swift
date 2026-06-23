@@ -85,7 +85,7 @@ struct SettingsOtherTabView: View {
           label: "Distraction nudges",
           subtitle:
             "A gentle reminder when you've spent too long distracted. Never blocks anything.",
-          showsDivider: viewModel.distractionNudgesEnabled
+          showsDivider: true
         ) {
           SettingsToggle(isOn: $viewModel.distractionNudgesEnabled)
         }
@@ -102,13 +102,25 @@ struct SettingsOtherTabView: View {
 
           SettingsRow(
             label: "Wait between nudges",
-            subtitle: "Minimum quiet time after a nudge before the next one.",
-            showsDivider: false
+            subtitle: "Minimum quiet time after a nudge before the next one."
           ) {
             MinuteMenuPicker(
               selection: $viewModel.nudgeCooldownMinutes,
               options: ProductivityPreferences.nudgeCooldownMinuteOptions)
           }
+        }
+
+        SettingsRow(
+          label: "Use measured usage to improve accuracy",
+          subtitle:
+            "Adds your Mac's actual app and website foreground time (Screen Time / ActivityWatch) to the AI's input so it categorizes from facts, not just screenshots. Local only.",
+          showsDivider: false
+        ) {
+          SettingsToggle(
+            isOn: Binding(
+              get: { UsagePreferences.feedGroundTruthToAI },
+              set: { UsagePreferences.feedGroundTruthToAI = $0 }
+            ))
         }
       }
     }

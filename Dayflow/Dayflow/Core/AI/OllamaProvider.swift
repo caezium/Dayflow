@@ -121,7 +121,8 @@ final class OllamaProvider {
     let (titleSummary, firstLog) = try await generateTitleAndSummary(
       observations: sortedObservations,
       categories: context.categories,
-      batchId: batchId
+      batchId: batchId,
+      groundTruthUsage: context.groundTruthUsage
     )
     logs.append(firstLog)
 

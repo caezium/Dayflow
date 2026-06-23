@@ -893,13 +893,24 @@ final class LLMService: LLMServicing {
           )
         }
 
-        let context = ActivityGenerationContext(
+        var context = ActivityGenerationContext(
           batchObservations: observations,
           existingCards: existingActivityCards,
           currentTime: currentTime,
           categories: categories,
           hasPreviousCardWithinFiveMinutes: hasPreviousCardWithinFiveMinutes
         )
+
+        // Attach ground-truth foreground usage (Screen Time / ActivityWatch) for
+        // the batch window so local providers can categorize from measured facts.
+        if UsagePreferences.feedGroundTruthToAI,
+          let windowStart = observations.map({ $0.startTs }).min(),
+          let windowEnd = observations.map({ $0.endTs }).max()
+        {
+          context.groundTruthUsage = await UsageGroundTruth.shared.promptSection(
+            from: Date(timeIntervalSince1970: TimeInterval(windowStart)),
+            to: Date(timeIntervalSince1970: TimeInterval(windowEnd)))
+        }
 
         lastProcessingStep = .generatingCards
         await MainActor.run {
