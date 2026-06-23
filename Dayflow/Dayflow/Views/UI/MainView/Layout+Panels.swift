@@ -80,6 +80,9 @@ extension MainView {
       case .usage:
         UsageView()
           .padding(15)
+      case .tasks:
+        TasksView()
+          .padding(15)
       case .bug:
         BugReportView()
           .padding(15)

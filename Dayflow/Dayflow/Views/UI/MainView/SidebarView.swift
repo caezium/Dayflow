@@ -21,6 +21,7 @@ enum SidebarIcon: CaseIterable {
   case daily
   case weekly
   case usage
+  case tasks
   case chat
   case flow
   case agents
@@ -36,6 +37,7 @@ enum SidebarIcon: CaseIterable {
     case .flow: return "FlowIcon"
     case .agents: return "AgentsIcon"
     case .usage: return nil
+    case .tasks: return nil
     case .bug: return nil
     case .settings: return nil
     }
@@ -46,6 +48,7 @@ enum SidebarIcon: CaseIterable {
     case .flow: return "water.waves"
     case .agents: return "sparkles"
     case .usage: return "chart.bar.fill"
+    case .tasks: return "checklist"
     case .bug: return "exclamationmark.bubble.fill"
     case .settings: return "gearshape.fill"
     default: return nil
@@ -58,6 +61,7 @@ enum SidebarIcon: CaseIterable {
     case .daily: return "Daily"
     case .weekly: return "Weekly"
     case .usage: return "Usage"
+    case .tasks: return "Tasks"
     case .chat: return "Chat"
     case .flow: return "Flow"
     case .agents: return "Agents"
@@ -72,6 +76,7 @@ enum SidebarIcon: CaseIterable {
     case .daily: return "daily"
     case .weekly: return "weekly"
     case .usage: return "usage"
+    case .tasks: return "tasks"
     case .chat: return "dashboard"
     case .flow: return "flow"
     case .agents: return "agents"
