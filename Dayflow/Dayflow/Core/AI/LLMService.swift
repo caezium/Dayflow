@@ -918,11 +918,11 @@ final class LLMService: LLMServicing {
           {
             groundingBlocks.append(usage)
           }
-          if UsagePreferences.useScreenTextOCR {
-            let ocrBlock = await Task.detached(priority: .utility) {
-              ScreenTextOCR.shared.screenText(from: windowStartDate, to: windowEndDate)
-            }.value
-            if let ocrBlock { groundingBlocks.append(ocrBlock) }
+          if UsagePreferences.useScreenTextOCR,
+            let ocrBlock = await ScreenTextOCR.shared.screenText(
+              from: windowStartDate, to: windowEndDate)
+          {
+            groundingBlocks.append(ocrBlock)
           }
           if !groundingBlocks.isEmpty {
             context.groundTruthUsage = groundingBlocks.joined(separator: "\n\n")
