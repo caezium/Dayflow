@@ -2,58 +2,73 @@
 //  ScreenTextOCR.swift
 //  Dayflow
 //
-//  On-device OCR of captured screenshots via Apple's Vision framework. Extracts
-//  the literal on-screen text for an analysis window and formats it for the
-//  categorization prompt, so the LLM grounds its reading in exact text rather
-//  than only inferring from pixels. Fully local — no network, no extra permission.
+//  OCR of captured screenshots, feeding the literal on-screen text into the AI
+//  for sharper detection. Three selectable engines (UsagePreferences.ocrProvider):
+//    • .provider     — the configured LLM provider's vision model (Ollama local
+//                      or Gemini), matching Settings > Providers.
+//    • .gemini       — Gemini cloud vision directly (uses the stored Gemini key).
+//    • .appleVision  — on-device Apple Vision (local, free, private).
+//  Any LLM path that can't run (no key/model, network error) falls back to
+//  Apple Vision so OCR always degrades gracefully rather than failing.
 //
 
 import AppKit
 import Foundation
 import Vision
 
+enum OCRProvider: String, CaseIterable, Sendable {
+  case provider
+  case gemini
+  case appleVision
+
+  var displayName: String {
+    switch self {
+    case .provider: return "My LLM provider"
+    case .gemini: return "Gemini (cloud)"
+    case .appleVision: return "On-device (Apple Vision)"
+    }
+  }
+}
+
 final class ScreenTextOCR: @unchecked Sendable {
   static let shared = ScreenTextOCR()
   private init() {}
 
-  /// Recognized text lines from one screenshot file (empty on failure).
-  func recognizeText(atPath path: String) -> [String] {
-    guard
-      let image = NSImage(contentsOfFile: path),
-      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
-    else { return [] }
-
-    let request = VNRecognizeTextRequest()
-    request.recognitionLevel = .accurate
-    request.usesLanguageCorrection = false
-
-    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
-    try? handler.perform([request])
-
-    let observations = request.results as? [VNRecognizedTextObservation] ?? []
-    return observations.compactMap { $0.topCandidates(1).first?.string }
+  private enum Engine {
+    case appleVision
+    case gemini(key: String, model: String)
+    case ollama(endpoint: String, model: String)
   }
 
-  /// A deduped, length-capped OCR block for the window's screenshots, or nil if
-  /// there's nothing readable. Samples up to `maxFrames` frames to bound cost.
+  private let geminiModel = "gemini-2.0-flash"
+  private let ocrPrompt =
+    "Extract ALL text visible in this screenshot, verbatim, as plain lines. Output only the text — no commentary, no markdown."
+
+  /// A deduped, length-capped OCR block for the window's screenshots, or nil.
   func screenText(
-    from start: Date, to end: Date, maxFrames: Int = 4, maxChars: Int = 1500
-  ) -> String? {
+    from start: Date, to end: Date, maxChars: Int = 1500
+  ) async -> String? {
     let startTs = Int(start.timeIntervalSince1970)
     let endTs = Int(end.timeIntervalSince1970)
     let shots = StorageManager.shared.fetchScreenshotsInTimeRange(startTs: startTs, endTs: endTs)
     guard !shots.isEmpty else { return nil }
 
-    // Evenly sample frames across the window.
+    let engine = resolveEngine()
+    // LLM engines cost a request per frame, so sample fewer of them.
+    let maxFrames: Int = {
+      if case .appleVision = engine { return 4 }
+      return 2
+    }()
     let step = max(1, shots.count / maxFrames)
     let sampled = stride(from: 0, to: shots.count, by: step).prefix(maxFrames).map { shots[$0] }
 
     var seen = Set<String>()
     var lines: [String] = []
     for shot in sampled {
-      for raw in recognizeText(atPath: shot.filePath) {
-        let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard line.count >= 4 else { continue }  // drop single chars / noise
+      let raw = await recognize(path: shot.filePath, engine: engine)
+      for candidate in raw {
+        let line = candidate.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard line.count >= 4 else { continue }
         if seen.insert(line.lowercased()).inserted { lines.append(line) }
       }
     }
@@ -67,5 +82,152 @@ final class ScreenTextOCR: @unchecked Sendable {
       Literal text read off the screen during this window — use it to identify specific content, docs, sites, and tasks. It's exact; prefer it over guesses from screenshots.
       \(text)
       """
+  }
+
+  // MARK: - Engine resolution
+
+  private func resolveEngine() -> Engine {
+    func geminiEngine() -> Engine? {
+      guard
+        let key = KeychainManager.shared.retrieve(for: "gemini")?
+          .trimmingCharacters(in: .whitespacesAndNewlines),
+        !key.isEmpty
+      else { return nil }
+      return .gemini(key: key, model: geminiModel)
+    }
+    func ollamaEngine(endpoint: String) -> Engine? {
+      let model = UserDefaults.standard.string(forKey: "llmLocalModelId") ?? ""
+      guard !model.isEmpty else { return nil }
+      return .ollama(endpoint: endpoint, model: model)
+    }
+
+    switch UsagePreferences.ocrProvider {
+    case .appleVision:
+      return .appleVision
+    case .gemini:
+      return geminiEngine() ?? .appleVision
+    case .provider:
+      switch LLMProviderType.load() {
+      case .geminiDirect:
+        return geminiEngine() ?? .appleVision
+      case .ollamaLocal(let endpoint):
+        return ollamaEngine(endpoint: endpoint) ?? .appleVision
+      default:  // chatGPTClaude, dayflowBackend → no local image OCR path
+        return .appleVision
+      }
+    }
+  }
+
+  private func recognize(path: String, engine: Engine) async -> [String] {
+    switch engine {
+    case .appleVision:
+      return await Task.detached { self.recognizeWithVision(atPath: path) }.value
+    case .gemini(let key, let model):
+      if let text = await recognizeWithGemini(path: path, key: key, model: model) { return text }
+      return await Task.detached { self.recognizeWithVision(atPath: path) }.value
+    case .ollama(let endpoint, let model):
+      if let text = await recognizeWithOllama(path: path, endpoint: endpoint, model: model) {
+        return text
+      }
+      return await Task.detached { self.recognizeWithVision(atPath: path) }.value
+    }
+  }
+
+  // MARK: - Apple Vision (on-device)
+
+  private func recognizeWithVision(atPath path: String) -> [String] {
+    guard
+      let image = NSImage(contentsOfFile: path),
+      let cgImage = image.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    else { return [] }
+    let request = VNRecognizeTextRequest()
+    request.recognitionLevel = .accurate
+    request.usesLanguageCorrection = false
+    let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
+    try? handler.perform([request])
+    let observations = request.results as? [VNRecognizedTextObservation] ?? []
+    return observations.compactMap { $0.topCandidates(1).first?.string }
+  }
+
+  // MARK: - LLM vision (cloud Gemini / local Ollama)
+
+  private func base64JPEG(path: String) -> String? {
+    guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else { return nil }
+    return data.base64EncodedString()
+  }
+
+  /// Returns recognized lines, or nil on any failure (so the caller can fall back).
+  private func recognizeWithGemini(path: String, key: String, model: String) async -> [String]? {
+    guard let b64 = base64JPEG(path: path) else { return nil }
+    let urlString =
+      "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(key)"
+    guard let url = URL(string: urlString) else { return nil }
+
+    let body: [String: Any] = [
+      "contents": [
+        [
+          "parts": [
+            ["text": ocrPrompt],
+            ["inline_data": ["mime_type": "image/jpeg", "data": b64]],
+          ]
+        ]
+      ]
+    ]
+    guard let text = await postJSON(url: url, body: body) else { return nil }
+    // candidates[0].content.parts[*].text
+    guard
+      let candidates = text["candidates"] as? [[String: Any]],
+      let content = candidates.first?["content"] as? [String: Any],
+      let parts = content["parts"] as? [[String: Any]]
+    else { return nil }
+    let joined = parts.compactMap { $0["text"] as? String }.joined(separator: "\n")
+    return joined.split(separator: "\n").map(String.init)
+  }
+
+  private func recognizeWithOllama(path: String, endpoint: String, model: String) async -> [String]?
+  {
+    guard let b64 = base64JPEG(path: path) else { return nil }
+    let base = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
+    guard let url = URL(string: base + "/v1/chat/completions") else { return nil }
+
+    let body: [String: Any] = [
+      "model": model,
+      "stream": false,
+      "messages": [
+        [
+          "role": "user",
+          "content": [
+            ["type": "text", "text": ocrPrompt],
+            ["type": "image_url", "image_url": ["url": "data:image/jpeg;base64,\(b64)"]],
+          ],
+        ]
+      ],
+    ]
+    guard let json = await postJSON(url: url, body: body) else { return nil }
+    // choices[0].message.content
+    guard
+      let choices = json["choices"] as? [[String: Any]],
+      let message = choices.first?["message"] as? [String: Any],
+      let contentText = message["content"] as? String
+    else { return nil }
+    return contentText.split(separator: "\n").map(String.init)
+  }
+
+  private func postJSON(url: URL, body: [String: Any]) async -> [String: Any]? {
+    guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.httpBody = data
+    request.timeoutInterval = 25
+    let config = URLSessionConfiguration.ephemeral
+    config.timeoutIntervalForRequest = 25
+    let session = URLSession(configuration: config)
+    guard
+      let (respData, response) = try? await session.data(for: request),
+      let http = response as? HTTPURLResponse, http.statusCode == 200,
+      let json = try? JSONSerialization.jsonObject(with: respData) as? [String: Any]
+    else { return nil }
+    return json
   }
 }
