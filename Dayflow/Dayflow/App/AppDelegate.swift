@@ -167,6 +167,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     DistractionNudgeService.shared.start()
     MiniTimerWindowController.shared.restoreIfEnabled()
 
+    // Watch the iCloud "Dayflow Inbox" folder for manual time entries logged
+    // from a phone Shortcut.
+    ManualEntryInbox.shared.start()
+
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
 
