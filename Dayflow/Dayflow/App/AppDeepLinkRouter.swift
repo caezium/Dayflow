@@ -6,6 +6,7 @@ final class AppDeepLinkRouter {
     case startRecording = "start-recording"
     case stopRecording = "stop-recording"
     case referral = "referral"
+    case log = "log"
 
     init?(identifier: String) {
       switch identifier.lowercased() {
@@ -15,6 +16,8 @@ final class AppDeepLinkRouter {
         self = .stopRecording
       case Self.referral.rawValue, "claim", "r":
         self = .referral
+      case Self.log.rawValue, "log-time", "add":
+        self = .log
       default:
         return nil
       }
@@ -71,7 +74,23 @@ final class AppDeepLinkRouter {
       stopRecording()
     case .referral:
       saveReferralCode(from: url)
+    case .log:
+      logManualEntry(from: url)
     }
+  }
+
+  private func logManualEntry(from url: URL) {
+    let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+    var values: [String: Any] = [:]
+    for item in items where item.value != nil {
+      values[item.name.lowercased()] = item.value!
+    }
+    guard let entry = ManualEntryInbox.parseEntry(from: values) else {
+      print("[DeepLink] log: missing/invalid params (need title + minutes or start/end)")
+      return
+    }
+    StorageManager.shared.insertManualEntry(entry)
+    print("[DeepLink] Logged manual entry: \(entry.title)")
   }
 
   private func startRecording() {
