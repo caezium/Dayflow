@@ -40,10 +40,12 @@ extension GemmaBackupProvider {
   }
 
   func generateTitleAndSummary(
-    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?
+    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?,
+    groundTruthUsage: String? = nil
   ) async throws -> (TitleSummaryPayload, String) {
     let (summaryResult, summaryLog) = try await generateSummary(
-      observations: observations, categories: categories, batchId: batchId)
+      observations: observations, categories: categories, batchId: batchId,
+      groundTruthUsage: groundTruthUsage)
     let (titleResult, titleLog) = try await generateTitle(
       summary: summaryResult.summary, batchId: batchId)
 
@@ -62,7 +64,8 @@ extension GemmaBackupProvider {
   }
 
   func generateSummary(
-    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?
+    observations: [Observation], categories: [LLMCategoryDescriptor], batchId: Int64?,
+    groundTruthUsage: String? = nil
   ) async throws -> (SummaryResponse, String) {
     let observationLines: [String] = observations.map { obs in
       let startTime = formatTimestampForPrompt(obs.startTs)
@@ -88,7 +91,7 @@ extension GemmaBackupProvider {
 
       Observations:
       \(observationsText)
-
+      \(groundTruthUsage.map { "\n" + $0 + "\n" } ?? "")
       Step 1 - Extract from the text:
       - Apps/sites used: (list exact names)
       - People mentioned: (list names)
