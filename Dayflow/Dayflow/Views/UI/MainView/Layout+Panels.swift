@@ -77,6 +77,9 @@ extension MainView {
         DailyView(selectedDate: $selectedDate)
       case .weekly:
         WeeklyView()
+      case .usage:
+        UsageView()
+          .padding(15)
       case .bug:
         BugReportView()
           .padding(15)
