@@ -12,6 +12,17 @@ import Foundation
 enum UsagePreferences {
   private static let feedKey = "feedGroundTruthToAI"
   private static let autoLaunchAWKey = "autoLaunchActivityWatch"
+  private static let ocrKey = "useScreenTextOCR"
+
+  /// Whether to OCR screenshots and feed the on-screen text into the AI prompt
+  /// for sharper detection. Default on; local-only, no extra permission.
+  static var useScreenTextOCR: Bool {
+    get {
+      if UserDefaults.standard.object(forKey: ocrKey) == nil { return true }
+      return UserDefaults.standard.bool(forKey: ocrKey)
+    }
+    set { UserDefaults.standard.set(newValue, forKey: ocrKey) }
+  }
 
   /// Whether measured usage (Screen Time / ActivityWatch) is added to the
   /// analysis prompt to improve accuracy. Default on; degrades to no-op when no

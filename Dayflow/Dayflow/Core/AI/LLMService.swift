@@ -901,15 +901,32 @@ final class LLMService: LLMServicing {
           hasPreviousCardWithinFiveMinutes: hasPreviousCardWithinFiveMinutes
         )
 
-        // Attach ground-truth foreground usage (Screen Time / ActivityWatch) for
-        // the batch window so local providers can categorize from measured facts.
-        if UsagePreferences.feedGroundTruthToAI,
-          let windowStart = observations.map({ $0.startTs }).min(),
+        // Attach grounding context for the batch window so local providers can
+        // categorize from facts: measured foreground usage (Screen Time /
+        // ActivityWatch) plus exact on-screen text (OCR). Both are local-only and
+        // ride the same context field, which the local providers' prompts inject.
+        if let windowStart = observations.map({ $0.startTs }).min(),
           let windowEnd = observations.map({ $0.endTs }).max()
         {
-          context.groundTruthUsage = await UsageGroundTruth.shared.promptSection(
-            from: Date(timeIntervalSince1970: TimeInterval(windowStart)),
-            to: Date(timeIntervalSince1970: TimeInterval(windowEnd)))
+          let windowStartDate = Date(timeIntervalSince1970: TimeInterval(windowStart))
+          let windowEndDate = Date(timeIntervalSince1970: TimeInterval(windowEnd))
+          var groundingBlocks: [String] = []
+
+          if UsagePreferences.feedGroundTruthToAI,
+            let usage = await UsageGroundTruth.shared.promptSection(
+              from: windowStartDate, to: windowEndDate)
+          {
+            groundingBlocks.append(usage)
+          }
+          if UsagePreferences.useScreenTextOCR {
+            let ocrBlock = await Task.detached(priority: .utility) {
+              ScreenTextOCR.shared.screenText(from: windowStartDate, to: windowEndDate)
+            }.value
+            if let ocrBlock { groundingBlocks.append(ocrBlock) }
+          }
+          if !groundingBlocks.isEmpty {
+            context.groundTruthUsage = groundingBlocks.joined(separator: "\n\n")
+          }
         }
 
         lastProcessingStep = .generatingCards

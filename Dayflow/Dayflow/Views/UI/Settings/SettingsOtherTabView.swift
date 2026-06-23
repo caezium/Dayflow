@@ -115,12 +115,25 @@ struct SettingsOtherTabView: View {
           label: "Use measured usage to improve accuracy",
           subtitle:
             "Adds your Mac's actual app and website foreground time (Screen Time / ActivityWatch) to the AI's input so it categorizes from facts, not just screenshots. Local only.",
-          showsDivider: awLauncher.isInstalled
+          showsDivider: true
         ) {
           SettingsToggle(
             isOn: Binding(
               get: { UsagePreferences.feedGroundTruthToAI },
               set: { UsagePreferences.feedGroundTruthToAI = $0 }
+            ))
+        }
+
+        SettingsRow(
+          label: "Read on-screen text (OCR)",
+          subtitle:
+            "Extracts the actual text on your screen (on-device, via Apple Vision) and feeds it to the AI for sharper detection of what you're working on. Local only.",
+          showsDivider: awLauncher.isInstalled
+        ) {
+          SettingsToggle(
+            isOn: Binding(
+              get: { UsagePreferences.useScreenTextOCR },
+              set: { UsagePreferences.useScreenTextOCR = $0 }
             ))
         }
 
