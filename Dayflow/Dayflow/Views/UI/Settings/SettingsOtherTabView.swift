@@ -3,10 +3,6 @@ import SwiftUI
 struct SettingsOtherTabView: View {
   @ObservedObject var viewModel: OtherSettingsViewModel
   @ObservedObject var launchAtLoginManager: LaunchAtLoginManager
-  @ObservedObject private var miniTimer = MiniTimerWindowController.shared
-  @ObservedObject private var awLauncher = ActivityWatchLauncher.shared
-  @State private var ocrEnabled = UsagePreferences.useScreenTextOCR
-  @State private var ocrProvider = UsagePreferences.ocrProvider
   @FocusState private var isOutputLanguageFocused: Bool
 
   var body: some View {
@@ -66,136 +62,10 @@ struct SettingsOtherTabView: View {
         SettingsRow(
           label: "Save all timelapses to disk",
           subtitle:
-            "New and reprocessed timeline cards will pre-generate timelapse videos and store them on disk instead of building them on demand. Uses more storage and background processing."
+            "New and reprocessed timeline cards will pre-generate timelapse videos and store them on disk instead of building them on demand. Uses more storage and background processing.",
+          showsDivider: false
         ) {
           SettingsToggle(isOn: $viewModel.saveAllTimelapsesToDisk)
-        }
-
-        SettingsRow(
-          label: "Show focus timer",
-          subtitle:
-            "A small floating pill that counts up today's focused time live. Drag it anywhere; toggle it from the menu bar too."
-        ) {
-          SettingsToggle(
-            isOn: Binding(
-              get: { miniTimer.isVisible },
-              set: { miniTimer.setVisible($0) }
-            )
-          )
-        }
-
-        SettingsRow(
-          label: "Distraction nudges",
-          subtitle:
-            "A gentle reminder when you've spent too long distracted. Never blocks anything.",
-          showsDivider: true
-        ) {
-          SettingsToggle(isOn: $viewModel.distractionNudgesEnabled)
-        }
-
-        if viewModel.distractionNudgesEnabled {
-          SettingsRow(
-            label: "Nudge after",
-            subtitle: "Distraction time that triggers a nudge."
-          ) {
-            MinuteMenuPicker(
-              selection: $viewModel.nudgeThresholdMinutes,
-              options: ProductivityPreferences.nudgeThresholdMinuteOptions)
-          }
-
-          SettingsRow(
-            label: "Wait between nudges",
-            subtitle: "Minimum quiet time after a nudge before the next one."
-          ) {
-            MinuteMenuPicker(
-              selection: $viewModel.nudgeCooldownMinutes,
-              options: ProductivityPreferences.nudgeCooldownMinuteOptions)
-          }
-        }
-
-        SettingsRow(
-          label: "Daily \"ready to start?\" reminder",
-          subtitle:
-            "Once a day, if you have open tasks and you're at your Mac, a gentle reminder to get going."
-        ) {
-          SettingsToggle(
-            isOn: Binding(
-              get: { ProductivityPreferences.workRemindersEnabled },
-              set: { ProductivityPreferences.workRemindersEnabled = $0 }
-            ))
-        }
-
-        SettingsRow(
-          label: "Use measured usage to improve accuracy",
-          subtitle:
-            "Adds your Mac's actual app and website foreground time (Screen Time / ActivityWatch) to the AI's input so it categorizes from facts, not just screenshots. Local only.",
-          showsDivider: true
-        ) {
-          SettingsToggle(
-            isOn: Binding(
-              get: { UsagePreferences.feedGroundTruthToAI },
-              set: { UsagePreferences.feedGroundTruthToAI = $0 }
-            ))
-        }
-
-        SettingsRow(
-          label: "Read on-screen text (OCR)",
-          subtitle:
-            "Extracts the actual text on your screen and feeds it to the AI for sharper detection of what you're working on.",
-          showsDivider: true
-        ) {
-          SettingsToggle(
-            isOn: Binding(
-              get: { ocrEnabled },
-              set: { ocrEnabled = $0; UsagePreferences.useScreenTextOCR = $0 }
-            ))
-        }
-
-        if ocrEnabled {
-          SettingsRow(
-            label: "OCR engine",
-            subtitle:
-              "Which engine reads your screen. Your provider / Gemini are more accurate; Apple Vision is on-device and private. Falls back to Apple Vision if the chosen engine can't run.",
-            showsDivider: awLauncher.isInstalled
-          ) {
-            Menu {
-              ForEach(OCRProvider.allCases, id: \.self) { option in
-                Button(option.displayName) {
-                  ocrProvider = option
-                  UsagePreferences.ocrProvider = option
-                }
-              }
-            } label: {
-              HStack(spacing: 5) {
-                Text(ocrProvider.displayName)
-                  .font(.custom("Figtree", size: 13)).fontWeight(.semibold)
-                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
-              }
-              .foregroundColor(SettingsStyle.ink)
-              .padding(.horizontal, 12).padding(.vertical, 7)
-              .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.05)))
-            }
-            .menuStyle(BorderlessButtonMenuStyle())
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .pointingHandCursor()
-          }
-        }
-
-        if awLauncher.isInstalled {
-          SettingsRow(
-            label: "Auto-launch ActivityWatch",
-            subtitle:
-              "Start ActivityWatch automatically when Dayflow launches, so its richer tracking is always available."
-              + (awLauncher.isRunning ? " It's running now." : " It isn't running right now."),
-            showsDivider: false
-          ) {
-            SettingsToggle(
-              isOn: Binding(
-                get: { UsagePreferences.autoLaunchActivityWatch },
-                set: { UsagePreferences.autoLaunchActivityWatch = $0 }
-              ))
-          }
         }
       }
     }
@@ -241,47 +111,5 @@ struct SettingsOtherTabView: View {
         Spacer()
       }
     }
-  }
-}
-
-/// Compact dropdown for picking a minutes value, styled like the other
-/// Settings menus.
-private struct MinuteMenuPicker: View {
-  @Binding var selection: Int
-  let options: [Int]
-
-  var body: some View {
-    Menu {
-      ForEach(options, id: \.self) { minutes in
-        Button(Self.label(minutes)) { selection = minutes }
-      }
-    } label: {
-      HStack(spacing: 5) {
-        Text(Self.label(selection))
-          .font(.custom("Figtree", size: 13))
-          .fontWeight(.semibold)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 10, weight: .semibold))
-      }
-      .foregroundColor(SettingsStyle.ink)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 7)
-      .background(
-        RoundedRectangle(cornerRadius: 7, style: .continuous)
-          .fill(Color.black.opacity(0.05))
-      )
-    }
-    .menuStyle(BorderlessButtonMenuStyle())
-    .menuIndicator(.hidden)
-    .fixedSize()
-    .pointingHandCursor()
-  }
-
-  static func label(_ minutes: Int) -> String {
-    if minutes >= 60 && minutes % 60 == 0 {
-      let hours = minutes / 60
-      return "\(hours) hr"
-    }
-    return "\(minutes) min"
   }
 }

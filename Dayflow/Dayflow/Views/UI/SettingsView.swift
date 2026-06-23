@@ -15,6 +15,7 @@ struct SettingsView: View {
     case privacy
     case providers
     case aiTools
+    case productivity
     case data
     case other
 
@@ -27,6 +28,7 @@ struct SettingsView: View {
       case .privacy: return "Privacy"
       case .providers: return "Providers"
       case .aiTools: return "MCP / CLI"
+      case .productivity: return "Productivity"
       case .data: return "Export"
       case .other: return "Other"
       }
@@ -264,6 +266,8 @@ struct SettingsView: View {
         SettingsProvidersTabView(viewModel: providersViewModel)
       case .aiTools:
         SettingsAgentAccessTabView(viewModel: agentAccessViewModel)
+      case .productivity:
+        SettingsProductivityTabView()
       case .data:
         SettingsDataTabView(viewModel: otherViewModel)
       case .other:
