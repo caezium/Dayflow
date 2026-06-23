@@ -5,6 +5,8 @@ struct SettingsOtherTabView: View {
   @ObservedObject var launchAtLoginManager: LaunchAtLoginManager
   @ObservedObject private var miniTimer = MiniTimerWindowController.shared
   @ObservedObject private var awLauncher = ActivityWatchLauncher.shared
+  @State private var ocrEnabled = UsagePreferences.useScreenTextOCR
+  @State private var ocrProvider = UsagePreferences.ocrProvider
   @FocusState private var isOutputLanguageFocused: Bool
 
   var body: some View {
@@ -139,14 +141,45 @@ struct SettingsOtherTabView: View {
         SettingsRow(
           label: "Read on-screen text (OCR)",
           subtitle:
-            "Extracts the actual text on your screen (on-device, via Apple Vision) and feeds it to the AI for sharper detection of what you're working on. Local only.",
-          showsDivider: awLauncher.isInstalled
+            "Extracts the actual text on your screen and feeds it to the AI for sharper detection of what you're working on.",
+          showsDivider: true
         ) {
           SettingsToggle(
             isOn: Binding(
-              get: { UsagePreferences.useScreenTextOCR },
-              set: { UsagePreferences.useScreenTextOCR = $0 }
+              get: { ocrEnabled },
+              set: { ocrEnabled = $0; UsagePreferences.useScreenTextOCR = $0 }
             ))
+        }
+
+        if ocrEnabled {
+          SettingsRow(
+            label: "OCR engine",
+            subtitle:
+              "Which engine reads your screen. Your provider / Gemini are more accurate; Apple Vision is on-device and private. Falls back to Apple Vision if the chosen engine can't run.",
+            showsDivider: awLauncher.isInstalled
+          ) {
+            Menu {
+              ForEach(OCRProvider.allCases, id: \.self) { option in
+                Button(option.displayName) {
+                  ocrProvider = option
+                  UsagePreferences.ocrProvider = option
+                }
+              }
+            } label: {
+              HStack(spacing: 5) {
+                Text(ocrProvider.displayName)
+                  .font(.custom("Figtree", size: 13)).fontWeight(.semibold)
+                Image(systemName: "chevron.down").font(.system(size: 10, weight: .semibold))
+              }
+              .foregroundColor(SettingsStyle.ink)
+              .padding(.horizontal, 12).padding(.vertical, 7)
+              .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.05)))
+            }
+            .menuStyle(BorderlessButtonMenuStyle())
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .pointingHandCursor()
+          }
         }
 
         if awLauncher.isInstalled {

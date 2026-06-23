@@ -15,13 +15,27 @@ enum UsagePreferences {
   private static let ocrKey = "useScreenTextOCR"
 
   /// Whether to OCR screenshots and feed the on-screen text into the AI prompt
-  /// for sharper detection. Default on; local-only, no extra permission.
+  /// for sharper detection. Default on.
   static var useScreenTextOCR: Bool {
     get {
       if UserDefaults.standard.object(forKey: ocrKey) == nil { return true }
       return UserDefaults.standard.bool(forKey: ocrKey)
     }
     set { UserDefaults.standard.set(newValue, forKey: ocrKey) }
+  }
+
+  private static let ocrProviderKey = "ocrProvider"
+
+  /// Which engine performs the OCR. Defaults to the configured LLM provider
+  /// (not on-device), falling back to Apple Vision when that can't run.
+  static var ocrProvider: OCRProvider {
+    get {
+      guard let raw = UserDefaults.standard.string(forKey: ocrProviderKey),
+        let value = OCRProvider(rawValue: raw)
+      else { return .provider }
+      return value
+    }
+    set { UserDefaults.standard.set(newValue.rawValue, forKey: ocrProviderKey) }
   }
 
   /// Whether measured usage (Screen Time / ActivityWatch) is added to the
