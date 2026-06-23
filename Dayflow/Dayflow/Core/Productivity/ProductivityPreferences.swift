@@ -94,4 +94,17 @@ enum ProductivityPreferences {
     }
     set { defaults.set(newValue, forKey: distractionNudgesEnabledKey) }
   }
+
+  // MARK: - Work-start reminders
+
+  private static let workRemindersEnabledKey = "workRemindersEnabled"
+
+  /// A once-a-day "ready to start?" reminder when you have open tasks. Default on.
+  static var workRemindersEnabled: Bool {
+    get {
+      if defaults.object(forKey: workRemindersEnabledKey) == nil { return true }
+      return defaults.bool(forKey: workRemindersEnabledKey)
+    }
+    set { defaults.set(newValue, forKey: workRemindersEnabledKey) }
+  }
 }

@@ -112,6 +112,18 @@ struct SettingsOtherTabView: View {
         }
 
         SettingsRow(
+          label: "Daily \"ready to start?\" reminder",
+          subtitle:
+            "Once a day, if you have open tasks and you're at your Mac, a gentle reminder to get going."
+        ) {
+          SettingsToggle(
+            isOn: Binding(
+              get: { ProductivityPreferences.workRemindersEnabled },
+              set: { ProductivityPreferences.workRemindersEnabled = $0 }
+            ))
+        }
+
+        SettingsRow(
           label: "Use measured usage to improve accuracy",
           subtitle:
             "Adds your Mac's actual app and website foreground time (Screen Time / ActivityWatch) to the AI's input so it categorizes from facts, not just screenshots. Local only.",

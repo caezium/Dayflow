@@ -174,6 +174,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // Optionally launch ActivityWatch alongside Dayflow (opt-in).
     ActivityWatchLauncher.shared.autoLaunchIfEnabled()
 
+    // Once-a-day "ready to start?" reminder when there are open tasks.
+    WorkReminderService.shared.start()
+
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
 

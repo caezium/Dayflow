@@ -230,6 +230,43 @@ final class NotificationService: NSObject, ObservableObject {
     }
   }
 
+  /// Gentle "ready to start?" reminder when there are open tasks for today.
+  func sendWorkStartReminder(openTasks: Int) {
+    Task {
+      var settings = await center.notificationSettings()
+      var status = settings.authorizationStatus
+      if status == .notDetermined {
+        _ = await requestPermission()
+        settings = await center.notificationSettings()
+        status = settings.authorizationStatus
+      }
+      guard Self.canScheduleNotifications(for: status) else { return }
+
+      let identifier = "workreminder.start"
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+
+      let content = UNMutableNotificationContent()
+      content.title = "Ready to start?"
+      content.body =
+        openTasks == 1
+        ? "You have 1 task planned for today."
+        : "You have \(openTasks) tasks planned for today."
+      content.sound = .default
+      content.categoryIdentifier = "work_reminder"
+
+      let request = UNNotificationRequest(
+        identifier: identifier,
+        content: content,
+        trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
+      )
+      center.add(request) { error in
+        if let error {
+          print("[NotificationService] Failed to schedule work reminder: \(error)")
+        }
+      }
+    }
+  }
+
   func scheduleWeeklyUnlockNotification(at unlockDate: Date) async
     -> WeeklyUnlockNotificationScheduleResult
   {
@@ -471,7 +508,8 @@ extension NotificationService: UNUserNotificationCenterDelegate {
     let isJournalNotification = identifier.hasPrefix("journal.")
     let isDailyRecapNotification = identifier.hasPrefix("daily.")
     let isWeeklyUnlockNotification = identifier.hasPrefix("weekly.")
-    let isNudgeNotification = identifier.hasPrefix("nudge.")
+    let isNudgeNotification =
+      identifier.hasPrefix("nudge.") || identifier.hasPrefix("workreminder.")
 
     guard
       isJournalNotification || isDailyRecapNotification || isWeeklyUnlockNotification
@@ -559,7 +597,7 @@ extension NotificationService: UNUserNotificationCenterDelegate {
       return
     }
 
-    if identifier.hasPrefix("nudge.") {
+    if identifier.hasPrefix("nudge.") || identifier.hasPrefix("workreminder.") {
       print("[NotificationService] willPresent options=banner,sound identifier=\(identifier)")
       completionHandler([.banner, .sound])
       return
