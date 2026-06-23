@@ -147,13 +147,13 @@ final class GemmaBackupProvider {
       if !firstSlice.isEmpty {
         try await appendCard(
           for: firstSlice, to: &allCards, categories: context.categories, batchId: batchId,
-          logs: &logs)
+          logs: &logs, groundTruthUsage: context.groundTruthUsage)
       }
 
       if !secondSlice.isEmpty {
         try await appendCard(
           for: secondSlice, to: &allCards, categories: context.categories, batchId: batchId,
-          logs: &logs)
+          logs: &logs, groundTruthUsage: context.groundTruthUsage)
       }
     } else {
       try await appendCard(
@@ -176,7 +176,8 @@ final class GemmaBackupProvider {
     to cards: inout [ActivityCardData],
     categories: [LLMCategoryDescriptor],
     batchId: Int64?,
-    logs: inout [String]
+    logs: inout [String],
+    groundTruthUsage: String? = nil
   ) async throws {
     guard let firstObservation = observations.first,
       let lastObservation = observations.last
@@ -185,7 +186,8 @@ final class GemmaBackupProvider {
     let (titleSummary, summaryLog) = try await generateTitleAndSummary(
       observations: observations,
       categories: categories,
-      batchId: batchId
+      batchId: batchId,
+      groundTruthUsage: groundTruthUsage
     )
     logs.append(summaryLog)
 

@@ -11,6 +11,10 @@ struct ActivityGenerationContext {
   let currentTime: Date  // Current time to prevent future timestamps
   let categories: [LLMCategoryDescriptor]
   let hasPreviousCardWithinFiveMinutes: Bool
+  /// Optional ground-truth foreground usage (Screen Time / ActivityWatch) for the
+  /// batch window, formatted for the prompt. Local providers interpolate it; the
+  /// hosted backend provider deliberately does not (avoids sending it off-device).
+  var groundTruthUsage: String? = nil
 }
 
 enum DashboardChatProvider: String, Codable, CaseIterable {
