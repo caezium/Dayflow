@@ -34,6 +34,7 @@ struct ActivityCard: View {
   @State private var slideshowTitle: String?
   @State private var slideshowStartTime: Date?
   @State private var slideshowEndTime: Date?
+  @State private var measuredUsage: [UsageEntry] = []
 
   private let timeFormatter: DateFormatter = {
     let formatter = DateFormatter()
@@ -48,6 +49,7 @@ struct ActivityCard: View {
           .padding(16)
           .allowsHitTesting(!showCategoryPicker)
           .id(activity.id)
+          .task(id: activity.id) { await loadMeasuredUsage(for: activity) }
           .transition(
             .blurReplace.animation(
               .easeOut(duration: 0.2)
@@ -385,7 +387,63 @@ struct ActivityCard: View {
             .textSelection(.enabled)
         }
       }
+
+      if !measuredUsage.isEmpty {
+        measuredUsageSection
+      }
     }
+  }
+
+  private var measuredUsageSection: some View {
+    let apps = measuredUsage.filter { $0.kind == .app }.prefix(5)
+    let sites = measuredUsage.filter { $0.kind == .web }.prefix(3)
+    return VStack(alignment: .leading, spacing: 6) {
+      Text("MEASURED USAGE")
+        .font(Font.custom("Figtree", size: 12).weight(.semibold))
+        .foregroundColor(Color(red: 0.55, green: 0.55, blue: 0.55))
+
+      ForEach(Array(apps)) { entry in
+        measuredUsageRow(name: entry.displayName, seconds: entry.seconds)
+      }
+      ForEach(Array(sites)) { entry in
+        measuredUsageRow(name: entry.displayName, seconds: entry.seconds, isWeb: true)
+      }
+    }
+  }
+
+  private func measuredUsageRow(name: String, seconds: Double, isWeb: Bool = false) -> some View {
+    HStack(spacing: 8) {
+      Image(systemName: isWeb ? "globe" : "app.dashed")
+        .font(.system(size: 10, weight: .medium))
+        .foregroundColor(Color(red: 0.55, green: 0.55, blue: 0.55))
+        .frame(width: 14)
+      Text(name)
+        .font(Font.custom("Figtree", size: 12))
+        .foregroundColor(.black)
+        .lineLimit(1)
+      Spacer(minLength: 6)
+      Text(Self.compactUsageDuration(seconds))
+        .font(Font.custom("Figtree", size: 12).weight(.medium).monospacedDigit())
+        .foregroundColor(Color(red: 0.4, green: 0.4, blue: 0.4))
+    }
+  }
+
+  static func compactUsageDuration(_ seconds: Double) -> String {
+    let total = Int(seconds.rounded())
+    let h = total / 3600
+    let m = (total % 3600) / 60
+    if h > 0 { return m > 0 ? "\(h)h \(m)m" : "\(h)h" }
+    if m > 0 { return "\(m)m" }
+    return "<1m"
+  }
+
+  private func loadMeasuredUsage(for activity: TimelineActivity) async {
+    let start = activity.startTime
+    let end = activity.endTime
+    let entries = await Task.detached {
+      UsageGroundTruth.shared.usage(from: start, to: end)
+    }.value
+    await MainActor.run { measuredUsage = entries }
   }
 
   private func renderMarkdownText(_ content: String) -> Text {
