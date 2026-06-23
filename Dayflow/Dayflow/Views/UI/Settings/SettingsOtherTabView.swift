@@ -84,10 +84,31 @@ struct SettingsOtherTabView: View {
         SettingsRow(
           label: "Distraction nudges",
           subtitle:
-            "Gentle reminder when you've spent about 20 minutes distracted in the last half hour. Never blocks anything, and waits at least an hour between nudges.",
-          showsDivider: false
+            "A gentle reminder when you've spent too long distracted. Never blocks anything.",
+          showsDivider: viewModel.distractionNudgesEnabled
         ) {
           SettingsToggle(isOn: $viewModel.distractionNudgesEnabled)
+        }
+
+        if viewModel.distractionNudgesEnabled {
+          SettingsRow(
+            label: "Nudge after",
+            subtitle: "Distraction time that triggers a nudge."
+          ) {
+            MinuteMenuPicker(
+              selection: $viewModel.nudgeThresholdMinutes,
+              options: ProductivityPreferences.nudgeThresholdMinuteOptions)
+          }
+
+          SettingsRow(
+            label: "Wait between nudges",
+            subtitle: "Minimum quiet time after a nudge before the next one.",
+            showsDivider: false
+          ) {
+            MinuteMenuPicker(
+              selection: $viewModel.nudgeCooldownMinutes,
+              options: ProductivityPreferences.nudgeCooldownMinuteOptions)
+          }
         }
       }
     }
@@ -133,5 +154,47 @@ struct SettingsOtherTabView: View {
         Spacer()
       }
     }
+  }
+}
+
+/// Compact dropdown for picking a minutes value, styled like the other
+/// Settings menus.
+private struct MinuteMenuPicker: View {
+  @Binding var selection: Int
+  let options: [Int]
+
+  var body: some View {
+    Menu {
+      ForEach(options, id: \.self) { minutes in
+        Button(Self.label(minutes)) { selection = minutes }
+      }
+    } label: {
+      HStack(spacing: 5) {
+        Text(Self.label(selection))
+          .font(.custom("Figtree", size: 13))
+          .fontWeight(.semibold)
+        Image(systemName: "chevron.down")
+          .font(.system(size: 10, weight: .semibold))
+      }
+      .foregroundColor(SettingsStyle.ink)
+      .padding(.horizontal, 12)
+      .padding(.vertical, 7)
+      .background(
+        RoundedRectangle(cornerRadius: 7, style: .continuous)
+          .fill(Color.black.opacity(0.05))
+      )
+    }
+    .menuStyle(BorderlessButtonMenuStyle())
+    .menuIndicator(.hidden)
+    .fixedSize()
+    .pointingHandCursor()
+  }
+
+  static func label(_ minutes: Int) -> String {
+    if minutes >= 60 && minutes % 60 == 0 {
+      let hours = minutes / 60
+      return "\(hours) hr"
+    }
+    return "\(minutes) min"
   }
 }
