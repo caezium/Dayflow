@@ -229,7 +229,10 @@ extension MainView {
   }
 
   private var timelineTrailingControls: some View {
-    PausePillView()
+    HStack(spacing: 8) {
+      ActivityWatchLaunchPill()
+      PausePillView()
+    }
   }
 
   private var timelineHeaderTrailingReservation: CGFloat {
