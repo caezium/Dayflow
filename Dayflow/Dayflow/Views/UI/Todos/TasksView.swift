@@ -12,6 +12,7 @@ import SwiftUI
 struct TasksView: View {
   @ObservedObject private var store = TodoStore.shared
   @State private var newTitle = ""
+  @State private var isDetecting = false
   @FocusState private var addFocused: Bool
 
   private let titleColor = Color(red: 0.2, green: 0.2, blue: 0.2)  // #333333
@@ -48,23 +49,69 @@ struct TasksView: View {
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(4)
     }
-    .onAppear { store.carryForwardIncomplete(to: today) }
+    .onAppear { Task { await runDailyAutoFlow() } }
   }
 
   // MARK: - Header
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: 3) {
-      Text("Tasks")
-        .font(.custom("InstrumentSerif-Regular", size: 30))
-        .foregroundColor(titleColor)
-      Text(
-        openCount == 0 && doneCount == 0
-          ? "Plan today's work. Unfinished tasks carry over to tomorrow."
-          : "\(openCount) to do · \(doneCount) done today"
-      )
-      .font(.custom("Figtree", size: 12)).foregroundColor(subtitleColor)
+    HStack(alignment: .firstTextBaseline) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text("Tasks")
+          .font(.custom("InstrumentSerif-Regular", size: 30))
+          .foregroundColor(titleColor)
+        Text(
+          openCount == 0 && doneCount == 0
+            ? "Plan today's work. Unfinished tasks carry over to tomorrow."
+            : "\(openCount) to do · \(doneCount) done today"
+        )
+        .font(.custom("Figtree", size: 12)).foregroundColor(subtitleColor)
+      }
+      Spacer()
+      if openCount > 0 {
+        Button(action: detectDone) {
+          HStack(spacing: 5) {
+            if isDetecting {
+              ProgressView().controlSize(.small).scaleEffect(0.7).frame(width: 12, height: 12)
+            } else {
+              Image(systemName: "sparkles").font(.system(size: 11, weight: .semibold))
+            }
+            Text(isDetecting ? "Checking…" : "Detect done")
+              .font(.custom("Figtree", size: 12).weight(.medium))
+          }
+          .foregroundColor(titleColor)
+          .padding(.horizontal, 11).frame(height: 30)
+          .background(Color.white, in: Capsule())
+          .overlay(Capsule().strokeBorder(Color.black.opacity(0.1)))
+        }
+        .buttonStyle(.plain)
+        .disabled(isDetecting)
+        .pointingHandCursor()
+        .help("Use AI to mark tasks your activity shows you've completed")
+      }
     }
+  }
+
+  private func detectDone() {
+    guard !isDetecting else { return }
+    isDetecting = true
+    Task {
+      await TaskCompletionService.shared.checkCompletion(forDay: today)
+      isDetecting = false
+    }
+  }
+
+  /// Once per day: detect what got done yesterday (before carrying it forward),
+  /// then roll any still-unfinished tasks onto today.
+  private func runDailyAutoFlow() async {
+    let key = "lastTaskAutoCheckDay"
+    if UserDefaults.standard.string(forKey: key) != today {
+      let yesterday = Date().addingTimeInterval(-24 * 3600)
+        .getDayInfoFor4AMBoundary().dayString
+      await TaskCompletionService.shared.checkCompletion(forDay: yesterday)
+      UserDefaults.standard.set(today, forKey: key)
+    }
+    store.carryForwardIncomplete(to: today)
   }
 
   // MARK: - Add row
