@@ -15,6 +15,7 @@ struct SettingsView: View {
     case privacy
     case providers
     case aiTools
+    case productivity
     case data
     case other
 
@@ -27,6 +28,7 @@ struct SettingsView: View {
       case .privacy: return String(localized: "Privacy")
       case .providers: return String(localized: "Providers")
       case .aiTools: return String(localized: "MCP / CLI")
+      case .productivity: return "Productivity"
       case .data: return String(localized: "Export")
       case .other: return String(localized: "Other")
       }
@@ -263,6 +265,8 @@ struct SettingsView: View {
         SettingsProvidersTabView(viewModel: providersViewModel)
       case .aiTools:
         SettingsAgentAccessTabView(viewModel: agentAccessViewModel)
+      case .productivity:
+        SettingsProductivityTabView()
       case .data:
         SettingsDataTabView(viewModel: otherViewModel)
       case .other:
