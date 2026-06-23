@@ -84,6 +84,76 @@ final class ScreenTextOCR: @unchecked Sendable {
       """
   }
 
+  // MARK: - Capability check (for Settings)
+
+  struct EngineStatus: Sendable {
+    let label: String
+    let capable: Bool
+    let note: String
+  }
+
+  /// Resolve the chosen engine and report whether it can actually do vision OCR,
+  /// so Settings can warn instead of silently falling back to Apple Vision.
+  func activeEngineStatus() async -> EngineStatus {
+    func geminiStatus() -> EngineStatus {
+      let key = KeychainManager.shared.retrieve(for: "gemini")?
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+      if let key, !key.isEmpty {
+        return EngineStatus(label: "Gemini (cloud)", capable: true, note: "Vision-capable.")
+      }
+      return EngineStatus(
+        label: "Gemini (cloud)", capable: false,
+        note: "No Gemini API key — OCR will use Apple Vision.")
+    }
+
+    switch UsagePreferences.ocrProvider {
+    case .appleVision:
+      return EngineStatus(label: "Apple Vision", capable: true, note: "On-device. Always available.")
+    case .gemini:
+      return geminiStatus()
+    case .provider:
+      switch LLMProviderType.load() {
+      case .geminiDirect:
+        return geminiStatus()
+      case .ollamaLocal(let endpoint):
+        let model = UserDefaults.standard.string(forKey: "llmLocalModelId") ?? ""
+        guard !model.isEmpty else {
+          return EngineStatus(
+            label: "Local model", capable: false,
+            note: "No local model selected — OCR will use Apple Vision.")
+        }
+        let capable = await ollamaSupportsVision(endpoint: endpoint, model: model)
+        return EngineStatus(
+          label: model, capable: capable,
+          note: capable
+            ? "Vision-capable — used for OCR."
+            : "This model isn't vision-capable — OCR will use Apple Vision.")
+      default:
+        return EngineStatus(
+          label: "Configured provider", capable: false,
+          note: "This provider can't do local OCR — Apple Vision will be used.")
+      }
+    }
+  }
+
+  private func ollamaSupportsVision(endpoint: String, model: String) async -> Bool {
+    let base = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
+    if let url = URL(string: base + "/api/show"),
+      let json = await postJSON(url: url, body: ["model": model]),
+      let caps = json["capabilities"] as? [String],
+      caps.contains(where: { $0.lowercased() == "vision" })
+    {
+      return true
+    }
+    // Heuristic fallback (LM Studio and older Ollama lack /api/show capabilities).
+    let lower = model.lowercased()
+    let hints = [
+      "llava", "vision", "-vl", "vl-", "bakllava", "moondream", "minicpm-v", "qwen2-vl",
+      "qwen2.5vl", "qwen2.5-vl", "llama3.2-vision", "gemma3", "pixtral", "internvl",
+    ]
+    return hints.contains { lower.contains($0) }
+  }
+
   // MARK: - Engine resolution
 
   private func resolveEngine() -> Engine {
