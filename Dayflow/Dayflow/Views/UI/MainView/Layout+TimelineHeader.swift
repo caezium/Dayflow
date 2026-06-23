@@ -233,6 +233,7 @@ extension MainView {
       if dailyBrief.isFeatureEnabled {
         dailyBriefButton
       }
+      ActivityWatchLaunchPill()
       PausePillView()
     }
   }
