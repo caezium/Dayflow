@@ -4,6 +4,7 @@ struct SettingsOtherTabView: View {
   @ObservedObject var viewModel: OtherSettingsViewModel
   @ObservedObject var launchAtLoginManager: LaunchAtLoginManager
   @ObservedObject private var miniTimer = MiniTimerWindowController.shared
+  @ObservedObject private var awLauncher = ActivityWatchLauncher.shared
   @FocusState private var isOutputLanguageFocused: Bool
 
   var body: some View {
@@ -114,13 +115,29 @@ struct SettingsOtherTabView: View {
           label: "Use measured usage to improve accuracy",
           subtitle:
             "Adds your Mac's actual app and website foreground time (Screen Time / ActivityWatch) to the AI's input so it categorizes from facts, not just screenshots. Local only.",
-          showsDivider: false
+          showsDivider: awLauncher.isInstalled
         ) {
           SettingsToggle(
             isOn: Binding(
               get: { UsagePreferences.feedGroundTruthToAI },
               set: { UsagePreferences.feedGroundTruthToAI = $0 }
             ))
+        }
+
+        if awLauncher.isInstalled {
+          SettingsRow(
+            label: "Auto-launch ActivityWatch",
+            subtitle:
+              "Start ActivityWatch automatically when Dayflow launches, so its richer tracking is always available."
+              + (awLauncher.isRunning ? " It's running now." : " It isn't running right now."),
+            showsDivider: false
+          ) {
+            SettingsToggle(
+              isOn: Binding(
+                get: { UsagePreferences.autoLaunchActivityWatch },
+                set: { UsagePreferences.autoLaunchActivityWatch = $0 }
+              ))
+          }
         }
       }
     }

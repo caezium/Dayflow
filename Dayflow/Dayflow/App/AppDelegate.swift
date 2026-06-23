@@ -171,6 +171,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // from a phone Shortcut.
     ManualEntryInbox.shared.start()
 
+    // Optionally launch ActivityWatch alongside Dayflow (opt-in).
+    ActivityWatchLauncher.shared.autoLaunchIfEnabled()
+
     // Start daily recap generation scheduler (checks every 5 minutes)
     DailyRecapScheduler.shared.start()
 

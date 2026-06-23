@@ -11,6 +11,7 @@ import Foundation
 
 enum UsagePreferences {
   private static let feedKey = "feedGroundTruthToAI"
+  private static let autoLaunchAWKey = "autoLaunchActivityWatch"
 
   /// Whether measured usage (Screen Time / ActivityWatch) is added to the
   /// analysis prompt to improve accuracy. Default on; degrades to no-op when no
@@ -21,6 +22,13 @@ enum UsagePreferences {
       return UserDefaults.standard.bool(forKey: feedKey)
     }
     set { UserDefaults.standard.set(newValue, forKey: feedKey) }
+  }
+
+  /// Whether to automatically launch ActivityWatch when Dayflow starts. Default
+  /// off (opt-in), so Dayflow never starts other apps unexpectedly.
+  static var autoLaunchActivityWatch: Bool {
+    get { UserDefaults.standard.bool(forKey: autoLaunchAWKey) }
+    set { UserDefaults.standard.set(newValue, forKey: autoLaunchAWKey) }
   }
 }
 
