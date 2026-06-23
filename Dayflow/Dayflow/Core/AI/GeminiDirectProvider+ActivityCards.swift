@@ -125,6 +125,7 @@ extension GeminiDirectProvider {
       INPUTS:
       Previous cards: \(existingCardsString)
       New observations: \(transcriptText)
+      \(context.groundTruthUsage.map { "\n" + $0 + "\n" } ?? "")
       Return ONLY a JSON array with this EXACT structure:
 
               [
