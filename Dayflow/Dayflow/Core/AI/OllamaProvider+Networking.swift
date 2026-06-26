@@ -108,7 +108,8 @@ extension OllamaProvider {
           startedAt: start
         )
         ctxForAttempt = ctx
-        let (data, response) = try await URLSession.shared.data(for: urlRequest)
+        // Local/self-hosted endpoint — bypass any system proxy (see dayflowDirect).
+        let (data, response) = try await URLSession.dayflowDirect.data(for: urlRequest)
         let requestDuration = Date().timeIntervalSince(start)
         let statusCode = (response as? HTTPURLResponse)?.statusCode
         logCallDuration(operation: operation, duration: requestDuration, status: statusCode)
