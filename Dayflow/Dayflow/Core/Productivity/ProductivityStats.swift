@@ -116,6 +116,11 @@ final class ProductivityStats: ObservableObject {
 
     let idleKey = normalizedCategoryKey(CategoryStore.shared.idleCategory?.name ?? "Idle")
     let distractionKey = normalizedCategoryKey("Distraction")
+    // "System" is the category for error/placeholder cards ("Processing failed").
+    // They aren't real activity, so they must not count toward any total — otherwise
+    // a stalled/failed pipeline (e.g. disk full) inflates the focus timer with dozens
+    // of overlapping error cards.
+    let systemKey = normalizedCategoryKey("System")
 
     var focused: Double = 0
     var distracted: Double = 0
@@ -130,6 +135,8 @@ final class ProductivityStats: ObservableObject {
 
       let categoryKey = normalizedCategoryKey(
         span.category.trimmingCharacters(in: .whitespacesAndNewlines))
+      // Skip error/system placeholder cards entirely — no total, no live cursor.
+      if categoryKey == systemKey { continue }
       let isIdle = categoryKey == idleKey
       let isDistraction = categoryKey == distractionKey
 
