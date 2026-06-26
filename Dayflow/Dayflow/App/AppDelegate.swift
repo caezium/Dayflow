@@ -279,6 +279,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
   private func setupTimelineAnalysis() {
     // Perform after a short delay to ensure other initialization completes
     DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+      ProcessingControl.shared.applyOnLaunch()  // honor a persisted "stop all processing"
       AnalysisManager.shared.startAnalysisJob()
       print("AppDelegate: LLM analysis job started")
       let providerID = (try? LLMProviderRoutingStore.load())?.primary

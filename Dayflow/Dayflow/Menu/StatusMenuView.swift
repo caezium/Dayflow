@@ -7,6 +7,7 @@ struct StatusMenuView: View {
   @ObservedObject private var appState = AppState.shared
   @ObservedObject private var pauseManager = PauseManager.shared
   @ObservedObject private var miniTimer = MiniTimerWindowController.shared
+  @ObservedObject private var processing = ProcessingControl.shared
   private let updaterManager = UpdaterManager.shared
 
   private var controlMode: RecordingControlMode {
@@ -21,6 +22,15 @@ struct StatusMenuView: View {
       } else {
         PausedSection(onResume: resumeRecording)
       }
+
+      MenuDivider()
+
+      MenuRow(
+        title: processing.isStopped ? "Resume AI Processing" : "Stop All Processing",
+        systemImage: processing.isStopped ? "play.circle" : "stop.circle",
+        accent: processing.isStopped ? .accentColor : .red,
+        keepsMenuOpen: true,
+        action: toggleProcessing)
 
       MenuDivider()
 
@@ -70,6 +80,10 @@ struct StatusMenuView: View {
 
   private func toggleFocusTimer() {
     miniTimer.toggle()
+  }
+
+  private func toggleProcessing() {
+    processing.toggle()
   }
 
   private func openRecordingsFolder() {
