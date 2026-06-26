@@ -10,12 +10,14 @@ extension URLSessionConfiguration {
   /// a bare `HTTP 503` on the image payload while small text requests pass. Cloud
   /// providers must NOT call this (they may *need* the proxy, e.g. Gemini behind a
   /// firewall), so this is scoped to the local-endpoint code paths only.
+  ///
+  /// NOTE: assigning an *empty* dictionary is what actually works on macOS — it
+  /// tells URLSession "use these (no) proxy settings". Setting the documented
+  /// `kCFNetworkProxiesHTTPEnable = 0` keys is silently ignored here and the
+  /// request still goes through the system proxy (verified: enable=0 → 503,
+  /// empty dict → 200 against a proxied Tailscale endpoint).
   func disableProxies() {
-    connectionProxyDictionary = [
-      kCFNetworkProxiesHTTPEnable as String: 0,
-      kCFNetworkProxiesHTTPSEnable as String: 0,
-      kCFNetworkProxiesSOCKSEnable as String: 0,
-    ]
+    connectionProxyDictionary = [:]
   }
 }
 
