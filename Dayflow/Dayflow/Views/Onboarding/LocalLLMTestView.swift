@@ -209,7 +209,8 @@ struct LocalLLMTestView: View {
 
     let startedAt = Date()
 
-    URLSession.shared.dataTask(with: request) { data, response, error in
+    // Local/self-hosted endpoint — bypass any system proxy (see dayflowDirect).
+    URLSession.dayflowDirect.dataTask(with: request) { data, response, error in
       DispatchQueue.main.async {
         let duration = Date().timeIntervalSince(startedAt)
         if enforcesLocalLatencyLimit && duration > LocalLLMTestConstants.maxLatency {
