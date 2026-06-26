@@ -139,7 +139,7 @@ final class ScreenTextOCR: @unchecked Sendable {
   private func ollamaSupportsVision(endpoint: String, model: String) async -> Bool {
     let base = endpoint.hasSuffix("/") ? String(endpoint.dropLast()) : endpoint
     if let url = URL(string: base + "/api/show"),
-      let json = await postJSON(url: url, body: ["model": model]),
+      let json = await postJSON(url: url, body: ["model": model], bypassProxy: true),
       let caps = json["capabilities"] as? [String],
       caps.contains(where: { $0.lowercased() == "vision" })
     {
@@ -273,7 +273,7 @@ final class ScreenTextOCR: @unchecked Sendable {
         ]
       ],
     ]
-    guard let json = await postJSON(url: url, body: body) else { return nil }
+    guard let json = await postJSON(url: url, body: body, bypassProxy: true) else { return nil }
     // choices[0].message.content
     guard
       let choices = json["choices"] as? [[String: Any]],
@@ -283,7 +283,11 @@ final class ScreenTextOCR: @unchecked Sendable {
     return contentText.split(separator: "\n").map(String.init)
   }
 
-  private func postJSON(url: URL, body: [String: Any]) async -> [String: Any]? {
+  /// `bypassProxy` should be true for local/self-hosted endpoints (Ollama/LM Studio)
+  /// so they aren't routed through the system proxy; false for cloud (Gemini).
+  private func postJSON(url: URL, body: [String: Any], bypassProxy: Bool = false) async
+    -> [String: Any]?
+  {
     guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
@@ -292,6 +296,7 @@ final class ScreenTextOCR: @unchecked Sendable {
     request.timeoutInterval = 25
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 25
+    if bypassProxy { config.disableProxies() }
     let session = URLSession(configuration: config)
     guard
       let (respData, response) = try? await session.data(for: request),
