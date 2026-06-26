@@ -18,6 +18,7 @@ struct CardInsight: Sendable {
     let id = UUID()
     let time: String
     let text: String
+    let screenshotPath: String?
   }
 
   struct ReasoningStep: Identifiable, Sendable {
@@ -56,23 +57,42 @@ extension CardInsight {
     let rawObs = store.fetchObservations(batchId: batchId)
     let calls = store.fetchLLMCallsForBatches(batchIds: [batchId], limit: 200)
 
-    // Observations: the model's plain-language notes on what was on screen.
+    // Observations: the model's plain-language notes on what was on screen, each
+    // paired with a representative screenshot from its time window for a visual.
     let timeFmt = DateFormatter()
     timeFmt.dateFormat = "h:mm a"
+    let sortedObs = rawObs.sorted { $0.startTs < $1.startTs }
+    let shots: [(ts: Int, path: String)] = {
+      guard let lo = sortedObs.first?.startTs, let hi = sortedObs.last?.endTs else { return [] }
+      return store.fetchScreenshotsInTimeRange(startTs: lo, endTs: hi)
+        .filter { !$0.isDeleted }
+        .map { ($0.capturedAt, $0.filePath) }
+    }()
+    func nearestShot(start: Int, end: Int) -> String? {
+      let within = shots.filter { $0.ts >= start && $0.ts <= end }
+      let pool = within.isEmpty ? shots : within
+      return pool.min { abs($0.ts - start) < abs($1.ts - start) }?.path
+    }
     let observations: [Observation] =
-      rawObs
-      .sorted { $0.startTs < $1.startTs }
-      .compactMap { obs in
+      sortedObs.compactMap { obs in
         let text = obs.observation.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return nil }
         let when = timeFmt.string(from: Date(timeIntervalSince1970: TimeInterval(obs.startTs)))
-        return Observation(time: when, text: text)
+        return Observation(
+          time: when, text: text, screenshotPath: nearestShot(start: obs.startTs, end: obs.endTs))
       }
 
-    // Reasoning: the "reasoning" field the model returned for the meaningful steps.
+    // Reasoning: prefer the reasoning persisted on the card at creation time (robust,
+    // survives log pruning); fall back to parsing the logged llm_calls for older cards.
     var steps: [(order: Int, step: ReasoningStep)] = []
+    let persistedReasoning = store.fetchCardReasoning(batchId: batchId)
+    if let persistedReasoning, !persistedReasoning.isEmpty {
+      steps.append((0, ReasoningStep(label: label(for: "generate_cards"), text: persistedReasoning)))
+    }
     for call in calls where call.status == "success" {
       guard let priority = reasoningPriority(for: call.operation) else { continue }
+      // Card-generation reasoning is already covered by the persisted value above.
+      if persistedReasoning != nil && priority == 0 { continue }
       guard let assistant = assistantText(from: call.responseBody),
         let reasoning = reasoningField(from: assistant)
       else { continue }
@@ -106,6 +126,18 @@ extension CardInsight {
   }
 
   // MARK: - Parsing helpers
+
+  /// Best-effort extraction of the model's `reasoning` field from a raw card-generation
+  /// response. Handles a bare JSON object, a fenced one, or an OpenAI/Gemini envelope.
+  /// Used at card-save time to persist the reasoning alongside the card.
+  static func extractReasoning(fromModelResponse raw: String?) -> String? {
+    guard let raw, !raw.isEmpty else { return nil }
+    if let direct = reasoningField(from: raw) { return direct }
+    if let assistant = assistantText(from: raw), let nested = reasoningField(from: assistant) {
+      return nested
+    }
+    return nil
+  }
 
   /// Pulls the assistant's text out of a logged response body (OpenAI-compatible
   /// or Gemini shapes). Returns nil if it doesn't match either.
