@@ -8,10 +8,11 @@
 	<dict>
 		<!-- Allow plain-HTTP to user-configured local/self-hosted LLM endpoints
 		     (LAN, Tailscale 100.x, LiteLLM, LM Studio, etc.). Dayflow only ever
-		     connects to endpoints the user enters; this opens no inbound access. -->
+		     connects to endpoints the user enters; this opens no inbound access.
+		     NOTE: do NOT add NSAllowsLocalNetworking here — on modern macOS that
+		     key being present makes the system IGNORE NSAllowsArbitraryLoads, and
+		     it doesn't cover Tailscale's 100.64.0.0/10 range. -->
 		<key>NSAllowsArbitraryLoads</key>
-		<true/>
-		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
 	<key>CFBundleShortVersionString</key>
