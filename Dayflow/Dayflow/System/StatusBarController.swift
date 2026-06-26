@@ -161,6 +161,11 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     }
 
     menu.addItem(.separator())
+    menu.addItem(
+      actionItem(
+        ProcessingControl.shared.isStopped ? "Resume AI Processing" : "Stop All Processing",
+        #selector(toggleProcessing)))
+    menu.addItem(.separator())
     menu.addItem(actionItem(String(localized: "Open Dayflow"), #selector(openDayflow)))
     menu.addItem(
       actionItem(
@@ -221,6 +226,10 @@ final class StatusBarController: NSObject, NSMenuDelegate {
     NSApp.unhide(nil)
     MainWindowController.shared.showMainWindow()
     NSApp.activate(ignoringOtherApps: true)
+  }
+
+  @objc private func toggleProcessing() {
+    ProcessingControl.shared.toggle()
   }
 
   @objc private func toggleFocusTimer() {

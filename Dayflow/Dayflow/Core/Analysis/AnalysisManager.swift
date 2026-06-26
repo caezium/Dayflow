@@ -78,7 +78,35 @@ final class AnalysisManager: AnalysisManaging {
     }
   }
 
+  /// User-triggered "stop all processing". Guarded by `stopLock` because it's read
+  /// on the processing queue and written from the main thread. When set, the
+  /// per-batch loops bail before starting the next batch (the in-flight batch, if
+  /// any, finishes — LLM calls aren't interrupted mid-request).
+  private let stopLock = NSLock()
+  private var _stopRequested = false
+  var isProcessingStopped: Bool {
+    stopLock.lock(); defer { stopLock.unlock() }
+    return _stopRequested
+  }
+  private func setStopRequested(_ value: Bool) {
+    stopLock.lock(); _stopRequested = value; stopLock.unlock()
+  }
+
+  /// Halt the analysis pipeline: stop the timer and signal the running loops to
+  /// stop launching new batches. Existing/queued reprocess jobs also bail.
+  func stopAllProcessing() {
+    setStopRequested(true)
+    stopAnalysisJob()
+  }
+
+  /// Re-enable processing and restart the periodic job.
+  func resumeProcessing() {
+    setStopRequested(false)
+    startAnalysisJob()
+  }
+
   func startAnalysisJob() {
+    guard !isProcessingStopped else { return }  // respect a user stop across restarts
     stopAnalysisJob()  // ensure single timer
     DispatchQueue.main.async { [weak self] in
       guard let self else { return }
@@ -98,7 +126,7 @@ final class AnalysisManager: AnalysisManaging {
   }
 
   func triggerAnalysisNow() {
-    guard !isProcessing else { return }
+    guard !isProcessing, !isProcessingStopped else { return }
     queue.async { [weak self] in self?.processRecordings() }
   }
 
@@ -161,6 +189,10 @@ final class AnalysisManager: AnalysisManaging {
       var processedCount = 0
 
       for (index, batchId) in batchIds.enumerated() {
+        if self.isProcessingStopped {
+          DispatchQueue.main.async { progressHandler("Stopped by user.") }
+          break
+        }
 
         let batchStartTime = Date()
         let elapsedTotal = Date().timeIntervalSince(overallStartTime)
@@ -298,6 +330,10 @@ final class AnalysisManager: AnalysisManaging {
       var processedCount = 0
 
       for (index, batchId) in batchesToProcess.enumerated() {
+        if self.isProcessingStopped {
+          DispatchQueue.main.async { progressHandler("Stopped by user.") }
+          break
+        }
         let batchStartTime = Date()
         let elapsedTotal = Date().timeIntervalSince(overallStartTime)
 
@@ -527,7 +563,10 @@ final class AnalysisManager: AnalysisManaging {
     // 3. Persist batch rows & join table
     let batchIDs = batches.compactMap(saveScreenshotBatch)
     // 4. Fire LLM for each batch
-    for id in batchIDs { queueLLMRequest(batchId: id) }
+    for id in batchIDs {
+      if isProcessingStopped { break }
+      queueLLMRequest(batchId: id)
+    }
   }
 
   private func queueLLMRequest(
