@@ -230,6 +230,7 @@ extension MainView {
 
   private var timelineTrailingControls: some View {
     HStack(spacing: 8) {
+      ProcessingStatusPill()
       ActivityWatchLaunchPill()
       PausePillView()
     }
