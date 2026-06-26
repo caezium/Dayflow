@@ -8,6 +8,7 @@
 //  raw LLM-call view for power users. See CardInsight for the data.
 //
 
+import ImageIO
 import SwiftUI
 
 struct CardInsightSection: View {
@@ -86,21 +87,25 @@ struct CardInsightSection: View {
   }
 
   private var observationsView: some View {
-    VStack(alignment: .leading, spacing: 5) {
+    VStack(alignment: .leading, spacing: 8) {
       Text("WHAT IT SAW ON SCREEN")
         .font(Font.custom("Figtree", size: 10).weight(.semibold))
         .foregroundColor(labelColor)
       ForEach(insight.observations) { obs in
-        HStack(alignment: .top, spacing: 8) {
-          Text(obs.time)
-            .font(Font.custom("Figtree", size: 11).weight(.medium).monospacedDigit())
-            .foregroundColor(labelColor)
-            .frame(width: 58, alignment: .leading)
-          Text(obs.text)
-            .font(Font.custom("Figtree", size: 12))
-            .foregroundColor(bodyColor)
-            .fixedSize(horizontal: false, vertical: true)
-            .textSelection(.enabled)
+        HStack(alignment: .top, spacing: 9) {
+          if let path = obs.screenshotPath {
+            ObservationThumbnail(path: path)
+          }
+          VStack(alignment: .leading, spacing: 2) {
+            Text(obs.time)
+              .font(Font.custom("Figtree", size: 11).weight(.medium).monospacedDigit())
+              .foregroundColor(labelColor)
+            Text(obs.text)
+              .font(Font.custom("Figtree", size: 12))
+              .foregroundColor(bodyColor)
+              .fixedSize(horizontal: false, vertical: true)
+              .textSelection(.enabled)
+          }
         }
       }
     }
@@ -194,5 +199,52 @@ private struct RawCallRow: View {
     else { return call.status == "success" ? nil : "(no response body)" }
     let limit = 4000
     return raw.count > limit ? String(raw.prefix(limit)) + "\n… (truncated)" : raw
+  }
+}
+
+/// A small downsampled screenshot for an observation row. Loads off the main
+/// thread via ImageIO so the detail panel stays smooth even with many frames.
+private struct ObservationThumbnail: View {
+  let path: String
+  @State private var image: NSImage?
+
+  var body: some View {
+    ZStack {
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .fill(Color.black.opacity(0.05))
+      if let image {
+        Image(nsImage: image)
+          .resizable()
+          .scaledToFill()
+      }
+    }
+    .frame(width: 54, height: 34)
+    .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+    .overlay(
+      RoundedRectangle(cornerRadius: 4, style: .continuous)
+        .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+    )
+    .task(id: path) {
+      let p = path
+      let loaded = await Task.detached(priority: .utility) {
+        ObservationThumbnail.downsample(path: p, maxPixel: 160)
+      }.value
+      await MainActor.run { image = loaded }
+    }
+  }
+
+  static func downsample(path: String, maxPixel: CGFloat) -> NSImage? {
+    let url = URL(fileURLWithPath: path)
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true,
+      kCGImageSourceShouldCacheImmediately: true,
+      kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+    ]
+    guard let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
+      return nil
+    }
+    return NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height))
   }
 }
