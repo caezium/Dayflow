@@ -35,6 +35,7 @@ struct ActivityCard: View {
   @State private var slideshowStartTime: Date?
   @State private var slideshowEndTime: Date?
   @State private var measuredUsage: [UsageEntry] = []
+  @State private var cardInsight: CardInsight?
 
   private let timeFormatter: DateFormatter = {
     let formatter = DateFormatter()
@@ -49,7 +50,10 @@ struct ActivityCard: View {
           .padding(16)
           .allowsHitTesting(!showCategoryPicker)
           .id(activity.id)
-          .task(id: activity.id) { await loadMeasuredUsage(for: activity) }
+          .task(id: activity.id) {
+            await loadMeasuredUsage(for: activity)
+            await loadInsight(for: activity)
+          }
           .transition(
             .blurReplace.animation(
               .easeOut(duration: 0.2)
@@ -391,6 +395,10 @@ struct ActivityCard: View {
       if !measuredUsage.isEmpty {
         measuredUsageSection
       }
+
+      if let insight = cardInsight, !insight.isEmpty {
+        CardInsightSection(insight: insight)
+      }
     }
   }
 
@@ -444,6 +452,15 @@ struct ActivityCard: View {
       UsageGroundTruth.shared.usage(from: start, to: end)
     }.value
     await MainActor.run { measuredUsage = entries }
+  }
+
+  private func loadInsight(for activity: TimelineActivity) async {
+    guard let batchId = activity.batchId else {
+      await MainActor.run { cardInsight = nil }
+      return
+    }
+    let insight = await Task.detached { CardInsight.load(forBatchId: batchId) }.value
+    await MainActor.run { cardInsight = insight }
   }
 
   private func renderMarkdownText(_ content: String) -> Text {
