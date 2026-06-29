@@ -34,7 +34,14 @@ final class TodoStore: ObservableObject {
 
   @Published private(set) var items: [TodoItem] = []
 
-  init() { load() }
+  /// Backing store for persistence. Injectable so tests can use an isolated
+  /// suite instead of the app-wide standard defaults.
+  private let defaults: UserDefaults
+
+  init(defaults: UserDefaults = .standard) {
+    self.defaults = defaults
+    load()
+  }
 
   // MARK: - Queries
 
@@ -106,7 +113,7 @@ final class TodoStore: ObservableObject {
   // MARK: - Persistence
 
   private func load() {
-    guard let data = UserDefaults.standard.data(forKey: Self.storeKey) else { return }
+    guard let data = defaults.data(forKey: Self.storeKey) else { return }
     let decoder = JSONDecoder()
     decoder.dateDecodingStrategy = .iso8601
     if let decoded = try? decoder.decode([TodoItem].self, from: data) {
@@ -118,7 +125,7 @@ final class TodoStore: ObservableObject {
     let encoder = JSONEncoder()
     encoder.dateEncodingStrategy = .iso8601
     if let data = try? encoder.encode(items) {
-      UserDefaults.standard.set(data, forKey: Self.storeKey)
+      defaults.set(data, forKey: Self.storeKey)
     }
   }
 }
