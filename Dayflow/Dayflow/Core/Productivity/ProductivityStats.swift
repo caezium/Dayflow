@@ -122,12 +122,47 @@ final class ProductivityStats: ObservableObject {
     // of overlapping error cards.
     let systemKey = normalizedCategoryKey("System")
 
+    let result = Self.aggregate(
+      spans: spans,
+      idleKey: idleKey,
+      distractionKey: distractionKey,
+      systemKey: systemKey,
+      now: now,
+      nudgeWindowSeconds: ProductivityPreferences.nudgeWindowSeconds)
+
+    focusedSecondsToday = result.focused
+    distractedSecondsToday = result.distracted
+    idleSecondsToday = result.idle
+    lastSegmentEnd = result.lastSegmentEnd
+    lastSegmentIsFocused = result.lastSegmentIsFocused
+    distractedSecondsInNudgeWindow = result.distractedInNudgeWindow
+  }
+
+  /// The totals a recompute produces. Equatable for straightforward assertions.
+  struct Aggregation: Equatable {
     var focused: Double = 0
     var distracted: Double = 0
     var idle: Double = 0
+    var distractedInNudgeWindow: Double = 0
+    var lastSegmentEnd: Date?
+    var lastSegmentIsFocused: Bool = false
+  }
+
+  /// Pure aggregation of activity spans into productivity totals — extracted from
+  /// `recompute()` so the bucketing can be unit-tested without the storage and
+  /// category singletons. "System" (error placeholder) cards are excluded
+  /// entirely: they contribute to no total and never become the live segment.
+  static func aggregate(
+    spans: [TimelineActivitySpan],
+    idleKey: String,
+    distractionKey: String,
+    systemKey: String,
+    now: Date,
+    nudgeWindowSeconds: TimeInterval
+  ) -> Aggregation {
+    var result = Aggregation()
     var distractionSpans: [(start: Date, end: Date)] = []
     var latestEnd: Date?
-    var latestIsFocused = false
 
     for span in spans {
       let duration = Double(span.endTs - span.startTs)
@@ -141,34 +176,31 @@ final class ProductivityStats: ObservableObject {
       let isDistraction = categoryKey == distractionKey
 
       if isIdle {
-        idle += duration
+        result.idle += duration
       } else if isDistraction {
-        distracted += duration
+        result.distracted += duration
         distractionSpans.append(
           (Date(timeIntervalSince1970: TimeInterval(span.startTs)),
             Date(timeIntervalSince1970: TimeInterval(span.endTs))))
       } else {
-        focused += duration
+        result.focused += duration
       }
 
       let endDate = Date(timeIntervalSince1970: TimeInterval(span.endTs))
       if latestEnd == nil || endDate > latestEnd! {
         latestEnd = endDate
-        latestIsFocused = !isIdle && !isDistraction
+        result.lastSegmentIsFocused = !isIdle && !isDistraction
       }
     }
 
-    focusedSecondsToday = focused
-    distractedSecondsToday = distracted
-    idleSecondsToday = idle
-    lastSegmentEnd = latestEnd
-    lastSegmentIsFocused = latestIsFocused
+    result.lastSegmentEnd = latestEnd
 
-    let windowStart = now.addingTimeInterval(-ProductivityPreferences.nudgeWindowSeconds)
-    distractedSecondsInNudgeWindow = distractionSpans.reduce(0) { acc, span in
+    let windowStart = now.addingTimeInterval(-nudgeWindowSeconds)
+    result.distractedInNudgeWindow = distractionSpans.reduce(0) { acc, span in
       let overlapStart = max(span.start, windowStart)
       let overlapEnd = min(span.end, now)
       return acc + max(0, overlapEnd.timeIntervalSince(overlapStart))
     }
+    return result
   }
 }
