@@ -549,6 +549,15 @@ final class AnalysisManager: AnalysisManaging {
 
         // Mark batch as completed immediately
         self.updateBatchStatus(batchId: batchId, status: "completed")
+
+        // Now that fresh activity exists for this day, let the AI check whether
+        // any of the user's open tasks are done. Gated + debounced internally so
+        // a burst of processed batches won't spam the LLM.
+        Task { @MainActor in
+          await TaskCompletionService.shared.handleBatchProcessed(
+            forDay: currentLogicalDayString)
+        }
+
         self.enqueueSavedTimelapseGenerationIfNeeded(
           cardIds: cardIds,
           cardCount: activityCards.count,
