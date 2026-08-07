@@ -123,6 +123,17 @@ struct SettingsOtherTabView: View {
         }
 
         SettingsRow(
+          label: "Start of week",
+          subtitle: "Which day the Week timeline and Weekly dashboard begin on."
+        ) {
+          MinuteMenuLabelPicker(
+            selection: $viewModel.weekStartWeekday,
+            options: [2, 3, 4, 5, 6, 7, 1],
+            title: { WeekPreferences.weekdayName($0) }
+          )
+        }
+
+        SettingsRow(
           label: String(localized: "Save all timelapses to disk"),
           subtitle:
             String(

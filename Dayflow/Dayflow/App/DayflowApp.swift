@@ -557,6 +557,7 @@ extension Notification.Name {
   static let hideTimelineFailureToast = Notification.Name("hideTimelineFailureToast")
   static let showScreenRecordingPermissionNotice = Notification.Name(
     "showScreenRecordingPermissionNotice")
+  static let weekStartPreferenceChanged = Notification.Name("weekStartPreferenceChanged")
   static let openProvidersSettings = Notification.Name("openProvidersSettings")
   static let openAccountSettings = Notification.Name("openAccountSettings")
   static let navigateToFlow = Notification.Name("navigateToFlow")
