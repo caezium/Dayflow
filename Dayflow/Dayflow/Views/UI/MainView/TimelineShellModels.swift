@@ -3,6 +3,7 @@ import Foundation
 enum TimelineMode: String, CaseIterable, Identifiable {
   case day
   case week
+  case month
 
   var id: String { rawValue }
 
@@ -12,7 +13,128 @@ enum TimelineMode: String, CaseIterable, Identifiable {
       return "Day"
     case .week:
       return "Week"
+    case .month:
+      return "Month"
     }
+  }
+}
+
+struct TimelineMonthDay: Identifiable, Equatable, Sendable {
+  let date: Date
+  let dayString: String
+  let dayNumber: String
+  /// False for the leading/trailing padding days that fill out whole weeks.
+  let isInMonth: Bool
+
+  var id: String { dayString }
+}
+
+struct TimelineMonthRange: Equatable, Sendable {
+  /// First of the month at the 4 AM day boundary.
+  let monthStart: Date
+  /// First of the following month at 4 AM (exclusive).
+  let monthEnd: Date
+  /// The month's days padded with adjacent-month days to whole weeks, ordered
+  /// to start on the user's configured first weekday. Always a multiple of 7.
+  let gridDays: [TimelineMonthDay]
+
+  private static var calendar: Calendar {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = .autoupdatingCurrent
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
+    return calendar
+  }
+
+  private static let titleFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "MMMM yyyy"
+    return formatter
+  }()
+
+  private static let dayNumberFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "d"
+    return formatter
+  }()
+
+  private init(monthStart: Date, monthEnd: Date) {
+    self.monthStart = monthStart
+    self.monthEnd = monthEnd
+    self.gridDays = Self.buildGridDays(monthStart: monthStart, monthEnd: monthEnd)
+  }
+
+  static func containing(_ date: Date, calendar: Calendar = Self.calendar) -> TimelineMonthRange {
+    let timelineDate = timelineDisplayDate(from: date, now: date)
+    let components = calendar.dateComponents([.year, .month], from: timelineDate)
+    let firstOfMonth = calendar.date(from: components) ?? calendar.startOfDay(for: timelineDate)
+    let monthStart =
+      calendar.date(bySettingHour: 4, minute: 0, second: 0, of: firstOfMonth) ?? firstOfMonth
+    let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? monthStart
+    return TimelineMonthRange(monthStart: monthStart, monthEnd: monthEnd)
+  }
+
+  func shifted(byMonths months: Int, calendar: Calendar = Self.calendar) -> TimelineMonthRange {
+    let shiftedStart =
+      calendar.date(byAdding: .month, value: months, to: monthStart) ?? monthStart
+    return Self.containing(shiftedStart, calendar: calendar)
+  }
+
+  private static func buildGridDays(monthStart: Date, monthEnd: Date) -> [TimelineMonthDay] {
+    let calendar = Self.calendar
+    let firstDay = calendar.startOfDay(for: monthStart)
+    let weekday = calendar.component(.weekday, from: firstDay)
+    let leadingPadding = (weekday - calendar.firstWeekday + 7) % 7
+    guard
+      let gridStart = calendar.date(byAdding: .day, value: -leadingPadding, to: firstDay)
+    else { return [] }
+
+    // Compare against midnights: monthStart/monthEnd are 4 AM-anchored, and
+    // the grid walks calendar days.
+    let firstInMonthDay = calendar.startOfDay(for: monthStart)
+    let firstOutOfMonthDay = calendar.startOfDay(for: monthEnd)
+
+    var days: [TimelineMonthDay] = []
+    var cursor = gridStart
+    // Fill whole weeks until the month is fully covered (max 6 weeks).
+    while (cursor < firstOutOfMonthDay || days.count % 7 != 0) && days.count < 42 {
+      let dayStart = calendar.startOfDay(for: cursor)
+      days.append(
+        TimelineMonthDay(
+          date: normalizedTimelineDate(cursor),
+          dayString: DateFormatter.yyyyMMdd.string(from: cursor),
+          dayNumber: Self.dayNumberFormatter.string(from: cursor),
+          isInMonth: dayStart >= firstInMonthDay && dayStart < firstOutOfMonthDay
+        ))
+      guard let next = calendar.date(byAdding: .day, value: 1, to: cursor) else { break }
+      cursor = next
+    }
+    return days
+  }
+
+  /// Weekday header labels ordered to match gridDays columns.
+  static var weekdayHeaders: [String] {
+    let calendar = Self.calendar
+    let symbols = DateFormatter().shortWeekdaySymbols ?? calendar.shortWeekdaySymbols
+    guard symbols.count == 7 else { return [] }
+    return (0..<7).map { symbols[(calendar.firstWeekday - 1 + $0) % 7] }
+  }
+
+  var title: String {
+    Self.titleFormatter.string(from: monthStart)
+  }
+
+  var canNavigateForward: Bool {
+    monthStart < Self.containing(Date()).monthStart
+  }
+
+  var containsToday: Bool {
+    contains(Date())
+  }
+
+  func contains(_ date: Date) -> Bool {
+    let timelineDate = timelineDisplayDate(from: date, now: date)
+    let dayStart = timelineDate.getDayInfoFor4AMBoundary().startOfDay
+    return dayStart >= monthStart && dayStart < monthEnd
   }
 }
 
@@ -30,12 +152,12 @@ struct TimelineWeekRange: Equatable, Sendable {
   let weekEnd: Date
   let days: [TimelineWeekDay]
 
-  private static let calendar: Calendar = {
+  private static var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .autoupdatingCurrent
-    calendar.firstWeekday = 2
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
     return calendar
-  }()
+  }
 
   private static let titleFormatter: DateFormatter = {
     let formatter = DateFormatter()
