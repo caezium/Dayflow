@@ -36,16 +36,29 @@ struct CardInsight: Sendable {
     let latencyMs: Int?
     let httpStatus: Int?
     let responseBody: String?
+    let errorMessage: String?
+  }
+
+  /// Raw calls from one processing attempt. `title` is nil when the batch only
+  /// ever had a single attempt, so the UI can skip the header.
+  struct AttemptGroup: Identifiable, Sendable {
+    let id = UUID()
+    let title: String?
+    let calls: [RawCall]
   }
 
   let observations: [Observation]
   let reasoningSteps: [ReasoningStep]
   let model: String?
   let provider: String?
-  let rawCalls: [RawCall]
+  let attemptGroups: [AttemptGroup]
+
+  var rawCallCount: Int {
+    attemptGroups.reduce(0) { $0 + $1.calls.count }
+  }
 
   var isEmpty: Bool {
-    observations.isEmpty && reasoningSteps.isEmpty && rawCalls.isEmpty
+    observations.isEmpty && reasoningSteps.isEmpty && attemptGroups.isEmpty
   }
 }
 
@@ -82,6 +95,12 @@ extension CardInsight {
           time: when, text: text, screenshotPath: nearestShot(start: obs.startTs, end: obs.endTs))
       }
 
+    // Calls grouped per processing attempt, chronological. Reasoning and model
+    // attribution only consider the newest attempt — parsing reasoning out of a
+    // failed earlier attempt would describe cards that no longer exist.
+    let groupedByAttempt = groupCallsByAttempt(calls)
+    let latestAttemptCalls = groupedByAttempt.last?.calls ?? []
+
     // Reasoning: prefer the reasoning persisted on the card at creation time (robust,
     // survives log pruning); fall back to parsing the logged llm_calls for older cards.
     var steps: [(order: Int, step: ReasoningStep)] = []
@@ -89,7 +108,7 @@ extension CardInsight {
     if let persistedReasoning, !persistedReasoning.isEmpty {
       steps.append((0, ReasoningStep(label: label(for: "generate_cards"), text: persistedReasoning)))
     }
-    for call in calls where call.status == "success" {
+    for call in latestAttemptCalls where call.status == "success" {
       guard let priority = reasoningPriority(for: call.operation) else { continue }
       // Card-generation reasoning is already covered by the persisted value above.
       if persistedReasoning != nil && priority == 0 { continue }
@@ -108,21 +127,50 @@ extension CardInsight {
 
     // Which model/provider actually ran (prefer a card-generating step).
     let primary =
-      calls.first { $0.operation == "generate_summary" && $0.model != nil }
-      ?? calls.first { $0.model != nil }
+      latestAttemptCalls.first { $0.operation == "generate_summary" && $0.model != nil }
+      ?? latestAttemptCalls.first { $0.model != nil }
     let model = primary?.model
     let provider = primary.map { friendlyProvider($0.provider) }
 
-    let rawCalls = calls.map {
-      RawCall(
-        operation: $0.operation, model: $0.model, provider: friendlyProvider($0.provider),
-        status: $0.status, latencyMs: $0.latencyMs, httpStatus: $0.httpStatus,
-        responseBody: $0.responseBody)
+    // Newest attempt first in the UI; number attempts chronologically.
+    let totalAttempts = groupedByAttempt.count
+    var attemptGroups: [AttemptGroup] = []
+    for (index, group) in groupedByAttempt.enumerated() {
+      let title = totalAttempts > 1 ? "Attempt \(index + 1) of \(totalAttempts)" : nil
+      let groupCalls: [RawCall] = group.calls.map { entry in
+        RawCall(
+          operation: entry.operation, model: entry.model,
+          provider: friendlyProvider(entry.provider),
+          status: entry.status, latencyMs: entry.latencyMs, httpStatus: entry.httpStatus,
+          responseBody: entry.responseBody, errorMessage: entry.errorMessage)
+      }
+      attemptGroups.append(AttemptGroup(title: title, calls: groupCalls))
     }
+    attemptGroups.reverse()
 
     return CardInsight(
       observations: observations, reasoningSteps: reasoningSteps,
-      model: model, provider: provider, rawCalls: rawCalls)
+      model: model, provider: provider, attemptGroups: attemptGroups)
+  }
+
+  /// Buckets logged calls by processing attempt, attempts ordered chronologically
+  /// (by first call id) and calls within each attempt likewise. Legacy calls
+  /// logged before attempt stamping (nil attempt id) form their own bucket.
+  static func groupCallsByAttempt(_ calls: [LLMCallDebugEntry])
+    -> [(attemptId: ProcessingAttemptID?, calls: [LLMCallDebugEntry])]
+  {
+    var orderedKeys: [String] = []
+    var buckets: [String: [LLMCallDebugEntry]] = [:]
+
+    for call in calls.sorted(by: { $0.id < $1.id }) {
+      let key = call.processingAttemptId ?? ""
+      if buckets[key] == nil { orderedKeys.append(key) }
+      buckets[key, default: []].append(call)
+    }
+
+    return orderedKeys.map { key in
+      (attemptId: key.isEmpty ? nil : key, calls: buckets[key] ?? [])
+    }
   }
 
   // MARK: - Parsing helpers

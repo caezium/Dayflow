@@ -97,14 +97,15 @@ extension StorageManager {
       try db.execute(
         sql: """
               INSERT INTO llm_calls (
-                  batch_id, call_group_id, attempt, provider, model, operation,
-                  status, latency_ms, http_status, request_method, request_url,
+                  batch_id, processing_attempt_id, call_group_id, attempt, provider, model,
+                  operation, status, latency_ms, http_status, request_method, request_url,
                   request_headers, request_body, response_headers, response_body,
                   error_domain, error_code, error_message
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           """,
         arguments: [
           rec.batchId,
+          rec.processingAttemptId,
           rec.callGroupId,
           rec.attempt,
           rec.provider,

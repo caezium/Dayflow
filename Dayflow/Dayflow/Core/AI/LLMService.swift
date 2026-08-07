@@ -82,7 +82,8 @@ func selectTimelineProviderStartup<Context>(
 
 protocol LLMServicing {
   func processBatch(
-    _ batchId: Int64, progressHandler: ((LLMProcessingStep) -> Void)?,
+    _ batchId: Int64, attemptId: ProcessingAttemptID,
+    progressHandler: ((LLMProcessingStep) -> Void)?,
     completion: @escaping (Result<ProcessedBatchResult, Error>) -> Void)
   func generateText(prompt: String) async throws -> String
   func generateTextStreaming(prompt: String) -> AsyncThrowingStream<String, Error>
@@ -365,10 +366,12 @@ final class LLMService: LLMServicing {
     primaryContext: TimelineProviderContext,
     activeContext: TimelineProviderContext,
     backupContext: TimelineProviderContext?,
+    validate: (T) throws -> Void = { _ in },
     work: (TimelineProviderContext) async throws -> T
   ) async throws -> (value: T, activeContext: TimelineProviderContext, usedProviderBackup: Bool) {
     do {
       let value = try await work(activeContext)
+      try validate(value)
       let usingBackup = activeContext.id != primaryContext.id
       return (value, activeContext, usingBackup)
     } catch {
@@ -389,6 +392,7 @@ final class LLMService: LLMServicing {
 
       do {
         let value = try await work(backupContext)
+        try validate(value)
         AnalyticsService.shared.capture("llm_timeline_fallback_succeeded", attemptProps)
         return (value, backupContext, true)
       } catch {
@@ -653,7 +657,8 @@ final class LLMService: LLMServicing {
 
   // Keep the existing processBatch implementation for backward compatibility
   func processBatch(
-    _ batchId: Int64, progressHandler: ((LLMProcessingStep) -> Void)? = nil,
+    _ batchId: Int64, attemptId: ProcessingAttemptID,
+    progressHandler: ((LLMProcessingStep) -> Void)? = nil,
     completion: @escaping (Result<ProcessedBatchResult, Error>) -> Void
   ) {
     Task {
@@ -664,6 +669,7 @@ final class LLMService: LLMServicing {
         }
       }
 
+      await ProcessingAttemptContext.$id.withValue(attemptId) {
       // Get batch info first (outside do-catch so it's available in catch block)
       let batches = StorageManager.shared.allBatches()
       guard let batchInfo = batches.first(where: { $0.0 == batchId }) else {
@@ -694,6 +700,7 @@ final class LLMService: LLMServicing {
       let configuredBackupProviderLabel = configuredBackup.map { providerLabel(for: $0) }
       var backupConfigured = false
       var lastProcessingStep: LLMProcessingStep?
+      var stagedObservations: [Observation] = []
       print(
         "🧭 [LLMService] processBatch selected primary=\(primaryProviderID.analyticsName) "
           + "label=\(primaryProviderLabel) backup=\(configuredBackup?.analyticsName ?? "none")"
@@ -766,8 +773,8 @@ final class LLMService: LLMServicing {
         var activeContext = startup.activeContext
         var usedProviderBackup = startup.usedProviderBackup
 
-        // Mark batch as processing
-        StorageManager.shared.updateBatch(batchId, status: "processing")
+        // AnalysisManager has already registered this processing attempt
+        // synchronously before entering the provider pipeline.
 
         // Get batch start time for timestamp conversion
         let batchStartDate = Date(timeIntervalSince1970: TimeInterval(batchStartTs))
@@ -775,7 +782,6 @@ final class LLMService: LLMServicing {
         // Try screenshot-based transcription first (new system)
         let screenshots = StorageManager.shared.screenshotsForBatch(batchId)
         var observations: [Observation]
-        var transcribeLog: LLMCall
 
         guard !screenshots.isEmpty else {
           throw NSError(
@@ -796,40 +802,25 @@ final class LLMService: LLMServicing {
           batchId: batchId,
           primaryContext: primaryContext,
           activeContext: activeContext,
-          backupContext: backupContext
+          backupContext: backupContext,
+          validate: { result in
+            let usable = result.observations.filter {
+              !$0.observation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            guard !usable.isEmpty else {
+              throw TimelineProcessingError.noSemanticOutput(frameCount: screenshots.count)
+            }
+          }
         ) { context in
           try await context.actions.transcribeScreenshots(screenshots, batchStartDate, batchId)
         }
-        observations = transcribeResult.value.observations
-        transcribeLog = transcribeResult.value.log
+        observations = transcribeResult.value.observations.filter {
+          !$0.observation.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+        stagedObservations = observations
         activeContext = transcribeResult.activeContext
         usedProviderBackup = usedProviderBackup || transcribeResult.usedProviderBackup
         print("📸 [LLMService] Transcribed → \(observations.count) observations")
-
-        StorageManager.shared.saveObservations(batchId: batchId, observations: observations)
-
-        // If no observations, mark batch as complete with no activities
-        guard !observations.isEmpty else {
-          print("⚠️ [LLMService] Transcription returned 0 observations for batch \(batchId)")
-          if let logOutput = transcribeLog.output, !logOutput.isEmpty {
-            print("   ↳ transcribeLog.output: \(logOutput)")
-          }
-          if let logInput = transcribeLog.input, !logInput.isEmpty {
-            print("   ↳ transcribeLog.input: \(logInput)")
-          }
-          AnalyticsService.shared.capture(
-            "transcription_returned_empty",
-            [
-              "batch_id": batchId,
-              "provider": activeContext.id.analyticsName,
-              "provider_id": activeContext.id.rawValue,
-              "provider_label": activeContext.providerLabel,
-              "transcribe_latency_ms": Int((transcribeLog.latency ?? 0) * 1000),
-            ])
-          StorageManager.shared.updateBatch(batchId, status: "analyzed")
-          completion(.success(ProcessedBatchResult(cards: [], cardIds: [])))
-          return
-        }
 
         // SLIDING WINDOW CARD GENERATION - Replace old card generation with sliding window approach
 
@@ -843,10 +834,11 @@ final class LLMService: LLMServicing {
         let windowStartTime = currentTime.addingTimeInterval(-batchingConfig.cardLookbackDuration)
 
         // Fetch observations from the recent batching window (instead of just current batch).
-        let recentObservations = StorageManager.shared.fetchObservationsByTimeRange(
+        let storedRecentObservations = StorageManager.shared.fetchObservationsByTimeRange(
           from: windowStartTime,
           to: currentTime
-        )
+        ).filter { $0.batchId != batchId }
+        let recentObservations = storedRecentObservations + observations
 
         print("[DEBUG] LLMService fetched \(recentObservations.count) observations")
         for (i, obs) in recentObservations.enumerated() {
@@ -855,10 +847,20 @@ final class LLMService: LLMServicing {
         }
 
         // Fetch existing timeline cards that overlap with the recent batching window.
+        // System cards ("Processing failed" placeholders) must stay out of the LLM
+        // context: the model echoes them back in its card list, and
+        // replaceTimelineCardsInRange preserves System cards from other batches,
+        // so every processed batch would re-insert each copy — an exponential
+        // duplicate loop that has flooded real databases.
         let existingTimelineCards = StorageManager.shared.fetchTimelineCardsByTimeRange(
           from: windowStartTime,
           to: currentTime
-        )
+        ).filter {
+          $0.category.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("System") != .orderedSame
+            && $0.title.trimmingCharacters(in: .whitespacesAndNewlines)
+              .caseInsensitiveCompare("Processing failed") != .orderedSame
+        }
 
         let batchStartTime = Date(timeIntervalSince1970: TimeInterval(batchStartTs))
         let hasPreviousCardWithinFiveMinutes = StorageManager.shared.hasTimelineCardConnected(
@@ -940,7 +942,24 @@ final class LLMService: LLMServicing {
           batchId: batchId,
           primaryContext: primaryContext,
           activeContext: activeContext,
-          backupContext: backupContext
+          backupContext: backupContext,
+          validate: { result in
+            guard !result.cards.isEmpty else {
+              throw TimelineProcessingError.noSemanticOutput(frameCount: screenshots.count)
+            }
+            for card in result.cards {
+              guard !TimelineFailureCard.isGeneratedFailureShaped(card) else {
+                throw TimelineProcessingError.generatedFailurePlaceholder
+              }
+              guard TimelineClockRangeResolver.resolve(
+                start: card.startTime, end: card.endTime,
+                from: windowStartTime, to: currentTime) != nil
+              else {
+                throw TimelineProcessingError.invalidGeneratedCardTime(
+                  start: card.startTime, end: card.endTime)
+              }
+            }
+          }
         ) { providerContext in
           try await providerContext.actions.generateActivityCards(
             recentObservations, context, batchId)
@@ -956,7 +975,11 @@ final class LLMService: LLMServicing {
         let cardReasoning = CardInsight.extractReasoning(
           fromModelResponse: cardsResult.value.log.output)
 
-        // Replace old cards with new ones in the time range
+        // Upstream's Claude-aware bounds decide which existing cards this batch is
+        // allowed to overwrite (Claude routinely emits a first/last card that spills
+        // outside the generation window). Feed them to the attempt-scoped commit as
+        // the transaction window so both fixes stay live: card *parsing* still
+        // resolves against the generation window, but card *replacement* uses these.
         let replacementStartTime = Self.cardReplacementStartTime(
           activeProviderID: activeContext.id,
           generatedCards: cards,
@@ -968,27 +991,46 @@ final class LLMService: LLMServicing {
           generatedCards: cards,
           batchEndTime: currentTime
         )
-        let (insertedCardIds, deletedVideoPaths) = StorageManager.shared
-          .replaceTimelineCardsInRange(
-            from: replacementStartTime,
-            to: replacementEndTime,
-            with: cards.map { card in
-              TimelineCardShell(
-                startTimestamp: card.startTime,
-                endTimestamp: card.endTime,
-                category: card.category,
-                subcategory: card.subcategory,
-                title: card.title,
-                summary: card.summary,
-                detailedSummary: card.detailedSummary,
-                distractions: card.distractions,
-                appSites: card.appSites,
-                isBackupGenerated: isBackupGenerated ? true : nil,
-                reasoning: cardReasoning
-              )
-            },
-            batchId: batchId
-          )
+
+        let resolvedCards: [ResolvedTimelineCard] = try cards.map { card in
+          guard let range = TimelineClockRangeResolver.resolve(
+            start: card.startTime, end: card.endTime,
+            from: windowStartTime, to: currentTime)
+          else {
+            throw TimelineProcessingError.invalidGeneratedCardTime(
+              start: card.startTime, end: card.endTime)
+          }
+          let sourceBatchId = TimelineCardSourceAttributor.sourceBatchId(
+            for: range, observations: recentObservations, processingBatchId: batchId)
+          return ResolvedTimelineCard(
+            shell: TimelineCardShell(
+              startTimestamp: card.startTime,
+              endTimestamp: card.endTime,
+              category: card.category,
+              subcategory: card.subcategory,
+              title: card.title,
+              summary: card.summary,
+              detailedSummary: card.detailedSummary,
+              distractions: card.distractions,
+              appSites: card.appSites,
+              isBackupGenerated: isBackupGenerated ? true : nil,
+              reasoning: cardReasoning,
+              sourceBatchId: sourceBatchId),
+            range: range,
+            sourceBatchId: sourceBatchId)
+        }
+
+        let commit = SuccessfulProcessingCommit(
+          processingBatchId: batchId,
+          processingAttemptId: attemptId,
+          windowStart: replacementStartTime,
+          windowEnd: replacementEndTime,
+          observations: stagedObservations,
+          cards: resolvedCards)
+        let commitOutcome = try StorageManager.shared.commitSuccessfulProcessing(commit)
+        guard case .committed(let insertedCardIds, let deletedVideoPaths) = commitOutcome else {
+          throw TimelineProcessingError.supersededAttempt
+        }
 
         // Clean up deleted video files
         for path in deletedVideoPaths {
@@ -1001,8 +1043,7 @@ final class LLMService: LLMServicing {
           }
         }
 
-        // Mark batch as complete
-        StorageManager.shared.updateBatch(batchId, status: "analyzed")
+        // The successful commit atomically persisted cards, observations, and status.
 
         // Checkpoint WAL after batch processing to ensure data is persisted
         StorageManager.shared.checkpoint(mode: .passive)
@@ -1024,24 +1065,111 @@ final class LLMService: LLMServicing {
 
         completion(.success(ProcessedBatchResult(cards: cards, cardIds: insertedCardIds)))
 
-      } catch {
+      } catch let processingError {
         if !holdsTimelineCardGenerationGate {
           await Self.timelineCardGenerationGate.acquire()
           holdsTimelineCardGenerationGate = true
         }
 
-        print("Error processing batch: \(error)")
-        if let ns = error as NSError?, ns.domain == "GeminiError" {
+        print("Error processing batch: \(processingError)")
+        if let ns = processingError as NSError?, ns.domain == "GeminiError" {
           print("🔎 GEMINI DEBUG: NSError.userInfo=\(ns.userInfo)")
         }
 
-        let failureClassification = TimelineFailureClassifier.classify(error)
+        let batchStartDate = Date(timeIntervalSince1970: TimeInterval(batchStartTs))
+        let batchEndDate = Date(timeIntervalSince1970: TimeInterval(batchEndTs))
 
-        // Track analysis batch failed
+        // Salvage: the transcription may have succeeded even though card
+        // generation failed. Turn those observations into plain cards so the
+        // processed time still shows, and shrink the failure card to the
+        // largest span that genuinely has nothing.
+        let salvageClusters = TimelinePartialSalvage.clusters(from: stagedObservations)
+        let salvagedCards = salvageClusters.map { cluster in
+          ResolvedTimelineCard(
+            shell: TimelineCardShell(
+              startTimestamp: formatCardTime(cluster.start),
+              endTimestamp: formatCardTime(cluster.end),
+              category: "Uncategorized",
+              subcategory: "",
+              title: TimelinePartialSalvage.title(for: cluster),
+              summary: TimelinePartialSalvage.summary(for: cluster),
+              detailedSummary:
+                "Recovered from a partially failed processing run: the AI transcribed this period but couldn't finish generating polished cards. Retry the failure card (if present) or re-analyze to regenerate it.\n\n"
+                + cluster.texts.joined(separator: "\n"),
+              distractions: nil,
+              appSites: nil,
+              isBackupGenerated: true,
+              sourceBatchId: batchId),
+            range: ResolvedTimelineClockRange(start: cluster.start, end: cluster.end),
+            sourceBatchId: batchId)
+        }
+
+        let uncovered = TimelinePartialSalvage.uncoveredSpans(
+          windowStart: batchStartDate, windowEnd: batchEndDate, clusters: salvageClusters)
+        var resolvedErrorCard: ResolvedTimelineCard? = nil
+        if let failureSpan = uncovered.first ?? (salvagedCards.isEmpty
+          ? ResolvedTimelineClockRange(start: batchStartDate, end: batchEndDate) : nil)
+        {
+          let errorCard = createErrorCard(
+            batchId: batchId,
+            batchStartTime: failureSpan.start,
+            batchEndTime: failureSpan.end,
+            error: processingError)
+          resolvedErrorCard = ResolvedTimelineCard(
+            shell: TimelineCardShell(
+              startTimestamp: errorCard.startTimestamp,
+              endTimestamp: errorCard.endTimestamp,
+              category: errorCard.category,
+              subcategory: errorCard.subcategory,
+              title: errorCard.title,
+              summary: errorCard.summary,
+              detailedSummary: errorCard.detailedSummary,
+              distractions: errorCard.distractions,
+              appSites: errorCard.appSites,
+              isBackupGenerated: errorCard.isBackupGenerated,
+              idleMetadata: errorCard.idleMetadata,
+              reasoning: errorCard.reasoning,
+              sourceBatchId: batchId),
+            range: failureSpan,
+            sourceBatchId: batchId)
+        }
+        if !salvagedCards.isEmpty {
+          print(
+            "🩹 Salvaged \(salvagedCards.count) card(s) from failed batch \(batchId); failure card: \(resolvedErrorCard != nil ? "yes" : "no")"
+          )
+        }
+
+        let commitOutcome: ProcessingCommitOutcome
+        do {
+          commitOutcome = try StorageManager.shared.commitFailedProcessing(
+            FailedProcessingCommit(
+              processingBatchId: batchId,
+              processingAttemptId: attemptId,
+              windowStart: batchStartDate,
+              windowEnd: batchEndDate,
+              observations: stagedObservations,
+              errorCard: resolvedErrorCard,
+              salvagedCards: salvagedCards,
+              reason: processingError.localizedDescription))
+        } catch {
+          completion(.failure(error))
+          return
+        }
+
+        guard case .committed(let insertedCardIds, let deletedVideoPaths) = commitOutcome else {
+          completion(.failure(TimelineProcessingError.supersededAttempt))
+          return
+        }
+
+        let failureClassification = TimelineFailureClassifier.classify(processingError)
         AnalyticsService.shared.capture(
           "analysis_batch_failed",
           [
             "batch_id": batchId,
+            // Deliberately no "error_message": upstream's 07de9e9 dropped the raw
+            // localizedDescription from this event, and provider errors routinely
+            // embed endpoint URLs and response bodies. failure_kind carries the
+            // signal without the payload.
             "failure_kind": failureClassification.kind.rawValue,
             "processing_duration_seconds": Int(Date().timeIntervalSince(processingStartTime)),
             "llm_provider": primaryProviderID.analyticsName,
@@ -1056,61 +1184,37 @@ final class LLMService: LLMServicing {
         emitTimelineFailureToast(
           classification: failureClassification,
           operation: lastProcessingStep,
-          error: error,
+          error: processingError,
           primaryProvider: primaryProviderID.analyticsName,
           primaryProviderLabel: primaryProviderLabel,
           backupProvider: configuredBackupProviderName,
           backupProviderLabel: configuredBackupProviderLabel,
           backupConfigured: backupConfigured,
-          batchId: batchId
-        )
+          batchId: batchId)
 
-        // Mark batch as failed
-        StorageManager.shared.updateBatch(
-          batchId, status: "failed", reason: error.localizedDescription)
-
-        // Create an error card for the failed time period
-        let batchStartDate = Date(timeIntervalSince1970: TimeInterval(batchStartTs))
-        let batchEndDate = Date(timeIntervalSince1970: TimeInterval(batchEndTs))
-
-        let errorCard = createErrorCard(
-          batchId: batchId,
-          batchStartTime: batchStartDate,
-          batchEndTime: batchEndDate,
-          error: error
-        )
-
-        // Replace any existing cards in this time range with the error card
-        // This matches the happy path behavior and prevents duplicates
-        let (insertedCardIds, deletedVideoPaths) = StorageManager.shared
-          .replaceTimelineCardsInRange(
-            from: batchStartDate,
-            to: batchEndDate,
-            with: [errorCard],
-            batchId: batchId
-          )
-
-        // Clean up any deleted video files (if there were existing cards)
         for path in deletedVideoPaths {
-          let url = URL(fileURLWithPath: path)
           do {
-            try FileManager.default.removeItem(at: url)
-            print("🗑️ Deleted timelapse for replaced card: \(path)")
+            try FileManager.default.removeItem(at: URL(fileURLWithPath: path))
           } catch {
-            print("❌ Failed to delete timelapse: \(path) - \(error)")
+            print("❌ Failed to delete timelapse for failed batch: \(path) - \(error)")
           }
         }
 
-        if !insertedCardIds.isEmpty {
-          print(
-            "✅ Created error card (ID: \(insertedCardIds.first ?? -1)) for failed batch \(batchId), replacing \(deletedVideoPaths.count) existing cards"
-          )
+        if let insertedCardId = insertedCardIds.first {
+          print("✅ Created error card (ID: \(insertedCardId)) for failed batch \(batchId)")
         }
-
-        // Still return failure but with the error card created
-        completion(.failure(error))
+        completion(.failure(processingError))
+      }
       }
     }
+  }
+
+  private func formatCardTime(_ date: Date) -> String {
+    let formatter = DateFormatter()
+    formatter.dateFormat = "h:mm a"
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.timeZone = TimeZone.current
+    return formatter.string(from: date)
   }
 
   private func createErrorCard(
@@ -1127,20 +1231,28 @@ final class LLMService: LLMServicing {
     // Calculate duration in minutes
     let duration = Int(batchEndTime.timeIntervalSince(batchStartTime) / 60)
 
-    // Get human-readable error message
-    let humanError = getHumanReadableError(error)
+    let family = TimelineFailureCardCopy.family(for: error)
+    let summary = TimelineFailureCardCopy.cardSummary(
+      family: family,
+      durationMinutes: duration,
+      startTime: startTimeStr,
+      endTime: endTimeStr,
+      fallbackDetail: getHumanReadableError(error))
 
-    // Create the error card
+    let reprocessNote =
+      family == .missingSource
+      ? "The original recordings for this period are no longer available, so it can't be reprocessed."
+      : "The original recordings are preserved and can be reprocessed with the Retry button on this card."
+
     return TimelineCardShell(
       startTimestamp: startTimeStr,
       endTimestamp: endTimeStr,
       category: "System",
       subcategory: "Error",
       title: "Processing failed",
-      summary:
-        "Failed to process \(duration) minutes of recording from \(startTimeStr) to \(endTimeStr). \(humanError) Your recording is safe and can be reprocessed.",
+      summary: summary,
       detailedSummary:
-        "Error details: \(error.localizedDescription)\n\nThis recording batch (ID: \(batchId)) failed during AI processing. The original video files are preserved and can be reprocessed by retrying from Settings. Common causes include network issues, API rate limits, or temporary service outages.",
+        "Error details: \(error.localizedDescription)\n\nThis recording batch (ID: \(batchId)) failed during AI processing. \(reprocessNote)",
       distractions: nil,
       appSites: nil
     )

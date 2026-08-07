@@ -83,16 +83,42 @@ final class RetryCoordinator: ObservableObject {
     return batchIds.contains(activeBatchId)
   }
 
-  func startRetry(for dayString: String, onBatchCompleted: @escaping (Int64) -> Void) {
+  func startRetry(forDay dayString: String, onBatchCompleted: @escaping (Int64) -> Void) {
     guard !isRunning else { return }
     isRunning = true
 
     Task.detached {
-      let batchIds = Self.failedBatchIds(for: dayString)
+      // Collect every retryable failed batch in the day so one click clears the
+      // whole backlog sequentially, rather than making the user retry them one
+      // at a time. Retryable flags are rechecked here (not trusted from render
+      // time) because a batch's source screenshots may have been purged since.
+      let batchIds = Self.retryableFailedBatchIds(forDay: dayString)
       await MainActor.run {
+        guard !batchIds.isEmpty else {
+          self.isRunning = false
+          return
+        }
         self.beginQueue(batchIds: batchIds, onBatchCompleted: onBatchCompleted)
       }
     }
+  }
+
+  /// Failed batches in a day whose source screenshots still exist, in card
+  /// order, deduplicated. Runs off the main actor.
+  nonisolated private static func retryableFailedBatchIds(forDay dayString: String) -> [Int64] {
+    let storage = StorageManager.shared
+    let cards = storage.fetchTimelineCards(forDay: dayString)
+    var seen = Set<Int64>()
+    var ordered: [Int64] = []
+    for card in cards {
+      guard card.title == "Processing failed", let batchId = card.batchId, !seen.contains(batchId)
+      else { continue }
+      guard TimelineActivityLoader.hasRetrySourceScreenshots(for: batchId, storageManager: storage)
+      else { continue }
+      seen.insert(batchId)
+      ordered.append(batchId)
+    }
+    return ordered
   }
 
   func reset() {
@@ -100,24 +126,6 @@ final class RetryCoordinator: ObservableObject {
     activeBatchId = nil
     isRunning = false
     stopDotTimer()
-  }
-
-  nonisolated private static func failedBatchIds(for dayString: String) -> [Int64] {
-    let cards = StorageManager.shared.fetchTimelineCards(forDay: dayString)
-    var seen = Set<Int64>()
-    var ordered: [Int64] = []
-
-    for card in cards {
-      guard
-        TimelineActivityLoader.isRetryableFailedCard(card, storageManager: StorageManager.shared),
-        let batchId = card.batchId
-      else { continue }
-      guard !seen.contains(batchId) else { continue }
-      seen.insert(batchId)
-      ordered.append(batchId)
-    }
-
-    return ordered
   }
 
   private func beginQueue(batchIds: [Int64], onBatchCompleted: @escaping (Int64) -> Void) {

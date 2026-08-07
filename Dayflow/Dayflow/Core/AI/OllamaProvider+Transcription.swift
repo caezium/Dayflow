@@ -12,7 +12,9 @@ extension OllamaProvider {
     let timestamp: TimeInterval  // Seconds from batch start
   }
 
-  private func getSimpleFrameDescription(_ frame: FrameData, batchId: Int64?) async -> String? {
+  private func getSimpleFrameDescription(_ frame: FrameData, batchId: Int64?) async
+    -> Result<String, Error>
+  {
     // Simple prompt focused on just describing what's happening
     let prompt = """
       Describe what you see on this computer screen in 1-2 sentences.
@@ -30,10 +32,12 @@ extension OllamaProvider {
       ✗ "Working on computer" (completely non-specific)
       """
 
-    // Convert base64 data back to string (return nil if we can't decode)
     guard let base64String = String(data: frame.image, encoding: .utf8) else {
       print("[OLLAMA] ⚠️ Failed to decode frame image — skipping frame")
-      return nil
+      return .failure(
+        NSError(
+          domain: "OllamaProvider", code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Failed to decode frame image"]))
     }
 
     // Build message content with image and text
@@ -55,13 +59,14 @@ extension OllamaProvider {
       let response = try await callChatAPI(
         request, operation: "describe_frame", batchId: batchId, maxRetries: 1)
       // Return the raw text response (no JSON parsing needed for simple descriptions)
-      return response.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
-        ?? ""
+      return .success(
+        response.choices.first?.message.content.trimmingCharacters(in: .whitespacesAndNewlines)
+          ?? "")
     } catch {
       print(
         "[OLLAMA] ⚠️ describe_frame failed at \(frame.timestamp)s — skipping frame: \(error.localizedDescription)"
       )
-      return nil
+      return .failure(error)
     }
   }
 
@@ -475,28 +480,41 @@ extension OllamaProvider {
     let lastTs = sampledScreenshots.last!.capturedAt
     let durationSeconds = TimeInterval(lastTs - firstTs)
 
-    // Describe each screenshot
+    // Describe each screenshot, keeping per-frame failure causes so an
+    // all-frames-failed batch can report why instead of a generic message.
     var frameDescriptions: [(timestamp: TimeInterval, description: String)] = []
+    var frameFailureCauses: [String] = []
 
     for screenshot in sampledScreenshots {
       guard let frameData = loadScreenshotAsFrameData(screenshot, relativeTo: firstTs) else {
         print("[OLLAMA] ⚠️ Failed to load screenshot: \(screenshot.filePath)")
+        frameFailureCauses.append("Failed to load screenshot file")
         continue
       }
 
-      if let description = await getSimpleFrameDescription(frameData, batchId: batchId) {
+      switch await getSimpleFrameDescription(frameData, batchId: batchId) {
+      case .success(let description):
         frameDescriptions.append((timestamp: frameData.timestamp, description: description))
+      case .failure(let error):
+        frameFailureCauses.append(error.localizedDescription)
       }
     }
 
     guard !frameDescriptions.isEmpty else {
+      // Keep the "Ollama/LMStudio is running" phrasing in both branches: the
+      // failure-toast classifier matches on it to show the actionable
+      // local-engine-offline toast.
+      let message: String
+      if let cause = TimelineFrameFailures.dominantCause(frameFailureCauses) {
+        message =
+          "Failed to describe all \(sampledScreenshots.count) sampled screenshots. Most frames failed with: \(cause) — please check that Ollama/LMStudio is running."
+      } else {
+        message = "Failed to describe any screenshots. Please check that Ollama/LMStudio is running."
+      }
       throw NSError(
         domain: "OllamaProvider",
         code: 11,
-        userInfo: [
-          NSLocalizedDescriptionKey:
-            "Failed to describe any screenshots. Please check that Ollama/LMStudio is running."
-        ]
+        userInfo: [NSLocalizedDescriptionKey: message]
       )
     }
 

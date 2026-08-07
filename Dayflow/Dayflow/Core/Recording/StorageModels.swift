@@ -78,6 +78,8 @@ struct TimelineCard: Codable, Sendable, Identifiable {
   let otherVideoSummaryURLs: [String]?  // For merged cards, subsequent video URLs
   let appSites: AppSites?
   let isBackupGenerated: Bool?
+  let processingAttemptId: ProcessingAttemptID?
+  let batchStatus: String?
 
   init(
     id: UUID = UUID(),
@@ -95,7 +97,9 @@ struct TimelineCard: Codable, Sendable, Identifiable {
     videoSummaryURL: String?,
     otherVideoSummaryURLs: [String]?,
     appSites: AppSites?,
-    isBackupGenerated: Bool? = nil
+    isBackupGenerated: Bool? = nil,
+    processingAttemptId: ProcessingAttemptID? = nil,
+    batchStatus: String? = nil
   ) {
     self.id = id
     self.recordId = recordId
@@ -113,6 +117,8 @@ struct TimelineCard: Codable, Sendable, Identifiable {
     self.otherVideoSummaryURLs = otherVideoSummaryURLs
     self.appSites = appSites
     self.isBackupGenerated = isBackupGenerated
+    self.processingAttemptId = processingAttemptId
+    self.batchStatus = batchStatus
   }
 }
 
@@ -127,6 +133,7 @@ struct LLMCall: Codable, Sendable {
 // DB record for llm_calls table
 struct LLMCallDBRecord: Sendable {
   let batchId: Int64?
+  let processingAttemptId: ProcessingAttemptID?
   let callGroupId: String?
   let attempt: Int
   let provider: String
@@ -167,8 +174,10 @@ struct TimelineReviewRatingSegment: Sendable {
 }
 
 struct LLMCallDebugEntry: Sendable {
+  let id: Int64
   let createdAt: Date?
   let batchId: Int64?
+  let processingAttemptId: ProcessingAttemptID?
   let callGroupId: String?
   let attempt: Int
   let provider: String
@@ -181,6 +190,8 @@ struct LLMCallDebugEntry: Sendable {
   let requestURL: String?
   let requestBody: String?
   let responseBody: String?
+  let errorDomain: String?
+  let errorCode: Int?
   let errorMessage: String?
 }
 
@@ -198,8 +209,8 @@ struct TimelineCardShell: Sendable {
   let isBackupGenerated: Bool?
   let idleMetadata: IdleCardMetadata?
   let reasoning: String?  // The model's explanation for how this card was produced
+  let sourceBatchId: Int64?
   // No videoSummaryURL here, as it's added later
-  // No batchId here, as it's passed as a separate parameter to the save function
 
   init(
     startTimestamp: String,
@@ -213,7 +224,8 @@ struct TimelineCardShell: Sendable {
     appSites: AppSites?,
     isBackupGenerated: Bool? = nil,
     idleMetadata: IdleCardMetadata? = nil,
-    reasoning: String? = nil
+    reasoning: String? = nil,
+    sourceBatchId: Int64? = nil
   ) {
     self.startTimestamp = startTimestamp
     self.endTimestamp = endTimestamp
@@ -227,6 +239,7 @@ struct TimelineCardShell: Sendable {
     self.isBackupGenerated = isBackupGenerated
     self.idleMetadata = idleMetadata
     self.reasoning = reasoning
+    self.sourceBatchId = sourceBatchId
   }
 }
 
