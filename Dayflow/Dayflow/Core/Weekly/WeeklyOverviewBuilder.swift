@@ -61,13 +61,13 @@ struct WeeklyOverviewSnapshot: Sendable {
 }
 
 enum WeeklyOverviewBuilder {
-  private static let calendar: Calendar = {
+  private static var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .autoupdatingCurrent
-    calendar.firstWeekday = 2
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
     calendar.minimumDaysInFirstWeek = 4
     return calendar
-  }()
+  }
 
   private static let systemCategoryKey = "system"
   private static let otherCategoryKey = "other"
@@ -437,10 +437,16 @@ enum WeeklyOverviewBuilder {
   }
 
   private static func weekDays(for weekStart: Date) -> [WeeklyOverviewDay] {
-    weekdayTemplates.enumerated().compactMap { offset, labels in
+    let calendar = Self.calendar
+    return (0..<7).compactMap { offset in
       guard let dayDate = calendar.date(byAdding: .day, value: offset, to: weekStart) else {
         return nil
       }
+
+      // weekStart is no longer always Monday, so pick labels by each date's
+      // actual weekday (1 = Sunday) instead of the template order.
+      let weekday = calendar.component(.weekday, from: dayDate)
+      let labels = weekdayTemplates[(weekday + 5) % 7]
 
       return WeeklyOverviewDay(
         label: labels.short,
