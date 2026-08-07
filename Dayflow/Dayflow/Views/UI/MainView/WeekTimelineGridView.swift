@@ -532,6 +532,14 @@ struct WeekTimelineGridView: View {
       let fetchStart = CFAbsoluteTimeGetCurrent()
       let activities = TimelineActivityLoader.activities(in: requestedWeekRange)
       let fetchMs = Int((CFAbsoluteTimeGetCurrent() - fetchStart) * 1000)
+
+      guard !Task.isCancelled else {
+        timelinePerfLog(
+          "weekGrid.load.cancelled trigger=\(trigger) week=\(requestedWeekID) selected=\(requestedSelectedDay)"
+        )
+        return
+      }
+
       let weekDays = requestedWeekRange.days
       let dayLookup = Dictionary(
         uniqueKeysWithValues: weekDays.enumerated().map { ($1.dayString, $0) })
@@ -540,10 +548,15 @@ struct WeekTimelineGridView: View {
       var positioned: [WeekPositionedActivity] = []
       positioned.reserveCapacity(activities.count)
 
+      // getDayInfoFor4AMBoundary is Calendar/DateFormatter heavy, and the shared
+      // formatter's internal lock is contended across concurrent loads — resolve
+      // each activity's day once instead of once per day column.
+      let activitiesByDay = Dictionary(grouping: activities) {
+        $0.startTime.getDayInfoFor4AMBoundary().dayString
+      }
+
       for day in weekDays {
-        let dayActivities = activities.filter {
-          $0.startTime.getDayInfoFor4AMBoundary().dayString == day.dayString
-        }
+        let dayActivities = activitiesByDay[day.dayString] ?? []
         let segments = TimelineActivityLoader.resolveDisplaySegments(from: dayActivities)
 
         for segment in segments {
@@ -579,9 +592,7 @@ struct WeekTimelineGridView: View {
       let projectionStart = CFAbsoluteTimeGetCurrent()
       let currentTimelineDay = timelineDisplayDate(from: Date())
       let currentDayString = DateFormatter.yyyyMMdd.string(from: currentTimelineDay)
-      let currentDayActivities = activities.filter {
-        $0.startTime.getDayInfoFor4AMBoundary().dayString == currentDayString
-      }
+      let currentDayActivities = activitiesByDay[currentDayString] ?? []
       let currentDaySegments = TimelineActivityLoader.resolveDisplaySegments(
         from: currentDayActivities)
       let currentDayVisualBlockers = Self.visualBlockingSegments(from: currentDaySegments)
