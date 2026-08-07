@@ -32,13 +32,13 @@ struct WeeklyDonutSnapshot: Sendable {
 }
 
 enum WeeklyDonutBuilder {
-  private static let calendar: Calendar = {
+  private static var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .autoupdatingCurrent
-    calendar.firstWeekday = 2
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
     calendar.minimumDaysInFirstWeek = 4
     return calendar
-  }()
+  }
 
   private static let systemCategoryKey = "system"
   private static let idleCategoryKey = "idle"
