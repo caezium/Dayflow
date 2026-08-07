@@ -74,6 +74,9 @@ struct WeeklyView: View {
     .onReceive(Timer.publish(every: 30, on: .main, in: .common).autoconnect()) { _ in
       refreshWeeklyAccessState()
     }
+    .onReceive(NotificationCenter.default.publisher(for: .weekStartPreferenceChanged)) { _ in
+      selectDefaultWeekOnEntry()
+    }
     .onChange(of: scenePhase) { _, phase in
       guard phase == .active else { return }
       refreshWeeklyAccessState()

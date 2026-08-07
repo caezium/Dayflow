@@ -34,14 +34,14 @@ struct TimelineCalendarPopover: View {
 
   @State private var displayMonth: Date
 
-  // Monday-first ordering matches the timeline's week model, so each row in the
-  // popover corresponds to a real Monday-Sunday week.
-  private static let mondayCalendar: Calendar = {
+  // First-weekday ordering matches the timeline's week model, so each row in
+  // the popover corresponds to one real week as the user has configured it.
+  private static var weekCalendar: Calendar {
     var c = Calendar(identifier: .gregorian)
     c.timeZone = .autoupdatingCurrent
-    c.firstWeekday = 2
+    c.firstWeekday = WeekPreferences.weekStartWeekday
     return c
-  }()
+  }
 
   private static let monthYearFormatter: DateFormatter = {
     let f = DateFormatter()
@@ -63,7 +63,7 @@ struct TimelineCalendarPopover: View {
     self.onSelect = onSelect
 
     // Seed display month to the month containing the current selection.
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     let comps = calendar.dateComponents([.year, .month], from: selectedDate)
     let monthStart = calendar.date(from: comps) ?? selectedDate
     self._displayMonth = State(initialValue: monthStart)
@@ -189,7 +189,7 @@ struct TimelineCalendarPopover: View {
   }
 
   private func dateCell(day: CalendarDay, isInSelectedWeek: Bool) -> some View {
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     let isSelected = calendar.isDate(day.date, inSameDayAs: selectedDate)
     let showsSelectedDayCircle = isSelected && !highlightsSelectedWeek
     let isDisabled: Bool = {
@@ -241,7 +241,7 @@ struct TimelineCalendarPopover: View {
   }
 
   private func shiftMonth(by months: Int) {
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     if let newMonth = calendar.date(byAdding: .month, value: months, to: displayMonth) {
       displayMonth = newMonth
     }
@@ -249,7 +249,7 @@ struct TimelineCalendarPopover: View {
 
   // Locale weekday symbols, rotated so Monday appears first.
   private func weekdayLabels() -> [String] {
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     let symbols = calendar.veryShortWeekdaySymbols
     let offset = calendar.firstWeekday - 1
     guard offset >= 0, offset < symbols.count else { return symbols }
@@ -259,7 +259,7 @@ struct TimelineCalendarPopover: View {
   // Build the visible month grid with leading/trailing days as needed to fill
   // complete Monday-Sunday weeks.
   private func daysToDisplay() -> [CalendarDay] {
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     let monthStart = displayMonth
     guard let monthRange = calendar.range(of: .day, in: .month, for: monthStart) else {
       return []
@@ -339,7 +339,7 @@ struct TimelineCalendarPopover: View {
   }
 
   private func isDateInSelectedWeek(_ date: Date) -> Bool {
-    let calendar = Self.mondayCalendar
+    let calendar = Self.weekCalendar
     return calendar.isDate(date, equalTo: selectedDate, toGranularity: .weekOfYear)
   }
 }

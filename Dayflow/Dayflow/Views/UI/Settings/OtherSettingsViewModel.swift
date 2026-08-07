@@ -24,6 +24,13 @@ final class OtherSettingsViewModel: ObservableObject {
       UserDefaults.standard.set(showTimelineAppIcons, forKey: "showTimelineAppIcons")
     }
   }
+  @Published var weekStartWeekday: Int {
+    didSet {
+      guard weekStartWeekday != oldValue else { return }
+      WeekPreferences.weekStartWeekday = weekStartWeekday
+      NotificationCenter.default.post(name: .weekStartPreferenceChanged, object: nil)
+    }
+  }
   @Published var showDailyGoalPopups: Bool {
     didSet {
       guard showDailyGoalPopups != oldValue else { return }
@@ -73,6 +80,7 @@ final class OtherSettingsViewModel: ObservableObject {
     showDockIcon = UserDefaults.standard.object(forKey: "showDockIcon") as? Bool ?? true
     showTimelineAppIcons =
       UserDefaults.standard.object(forKey: "showTimelineAppIcons") as? Bool ?? true
+    weekStartWeekday = WeekPreferences.weekStartWeekday
     showDailyGoalPopups = DayGoalPreferences.showDailyGoalPopups
     saveAllTimelapsesToDisk = TimelapsePreferences.saveAllTimelapsesToDisk
     distractionNudgesEnabled = ProductivityPreferences.distractionNudgesEnabled

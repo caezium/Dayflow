@@ -60,6 +60,17 @@ struct SettingsOtherTabView: View {
         }
 
         SettingsRow(
+          label: "Start of week",
+          subtitle: "Which day the Week timeline and Weekly dashboard begin on."
+        ) {
+          MinuteMenuLabelPicker(
+            selection: $viewModel.weekStartWeekday,
+            options: [2, 3, 4, 5, 6, 7, 1],
+            title: { WeekPreferences.weekdayName($0) }
+          )
+        }
+
+        SettingsRow(
           label: "Save all timelapses to disk",
           subtitle:
             "New and reprocessed timeline cards will pre-generate timelapse videos and store them on disk instead of building them on demand. Uses more storage and background processing.",

@@ -97,6 +97,11 @@ extension MainView {
       .onReceive(NotificationCenter.default.publisher(for: .timelineDataUpdated)) {
         handleTimelineDataUpdatedNotification($0)
       }
+      .onReceive(NotificationCenter.default.publisher(for: .weekStartPreferenceChanged)) { _ in
+        // Recompute the cached range under the new first weekday; the week
+        // grid reloads via its own onChange(of: weekRange).
+        cachedTimelineWeekRange = TimelineWeekRange.containing(selectedDate)
+      }
       .onReceive(
         NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
       ) { _ in

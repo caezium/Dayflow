@@ -17,9 +17,10 @@ struct WeeklyDateRange: Equatable, Sendable {
   }()
 
   static func containing(_ date: Date, calendar: Calendar = Self.calendar) -> WeeklyDateRange {
-    let mondayAtFourAM = mondayBoundary(containing: date, calendar: calendar)
-    let weekEnd = calendar.date(byAdding: .day, value: 7, to: mondayAtFourAM) ?? mondayAtFourAM
-    return WeeklyDateRange(weekStart: mondayAtFourAM, weekEnd: weekEnd)
+    let weekStartAtFourAM = weekStartBoundary(containing: date, calendar: calendar)
+    let weekEnd =
+      calendar.date(byAdding: .day, value: 7, to: weekStartAtFourAM) ?? weekStartAtFourAM
+    return WeeklyDateRange(weekStart: weekStartAtFourAM, weekEnd: weekEnd)
   }
 
   func shifted(byWeeks weeks: Int, calendar: Calendar = Self.calendar) -> WeeklyDateRange {
@@ -39,25 +40,25 @@ struct WeeklyDateRange: Equatable, Sendable {
     return "\(startText) - \(endText)"
   }
 
-  private static let calendar: Calendar = {
+  private static var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .autoupdatingCurrent
-    calendar.firstWeekday = 2
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
     calendar.minimumDaysInFirstWeek = 4
     return calendar
-  }()
+  }
 
-  private static func mondayBoundary(containing date: Date, calendar: Calendar) -> Date {
+  private static func weekStartBoundary(containing date: Date, calendar: Calendar) -> Date {
     let baseWeekStart =
       calendar.date(from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date))
       ?? date
-    let mondayAtFourAM =
+    let weekStartAtFourAM =
       calendar.date(bySettingHour: 4, minute: 0, second: 0, of: baseWeekStart) ?? baseWeekStart
 
-    if date < mondayAtFourAM {
-      return calendar.date(byAdding: .day, value: -7, to: mondayAtFourAM) ?? mondayAtFourAM
+    if date < weekStartAtFourAM {
+      return calendar.date(byAdding: .day, value: -7, to: weekStartAtFourAM) ?? weekStartAtFourAM
     }
 
-    return mondayAtFourAM
+    return weekStartAtFourAM
   }
 }

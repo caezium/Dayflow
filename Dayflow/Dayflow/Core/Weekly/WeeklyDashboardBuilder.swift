@@ -3,13 +3,13 @@ import Foundation
 import SwiftUI
 
 enum WeeklyDashboardBuilder {
-  static let calendar: Calendar = {
+  static var calendar: Calendar {
     var calendar = Calendar(identifier: .gregorian)
     calendar.timeZone = .autoupdatingCurrent
-    calendar.firstWeekday = 2
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
     calendar.minimumDaysInFirstWeek = 4
     return calendar
-  }()
+  }
 
   static let otherKey = "other"
   static let otherColorHex = "BFB6AE"
