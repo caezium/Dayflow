@@ -106,6 +106,10 @@ extension MainView {
     cachedTimelineWeekRange
   }
 
+  var timelineMonthRange: TimelineMonthRange {
+    TimelineMonthRange.containing(selectedDate)
+  }
+
   var isWeekTimelineInspectorVisible: Bool {
     timelineMode == .week && selectedActivity != nil
   }
@@ -116,6 +120,8 @@ extension MainView {
       return 358
     case .week:
       return isWeekTimelineInspectorVisible ? weekInspectorWidth : 0
+    case .month:
+      return 0
     }
   }
 
@@ -125,6 +131,8 @@ extension MainView {
       return 1
     case .week:
       return isWeekTimelineInspectorVisible ? 1 : 0
+    case .month:
+      return 0
     }
   }
 
@@ -159,6 +167,8 @@ extension MainView {
       return formatDateForDisplay(selectedDate)
     case .week:
       return timelineWeekRange.title
+    case .month:
+      return timelineMonthRange.title
     }
   }
 
@@ -168,6 +178,8 @@ extension MainView {
       return canNavigateForward(from: selectedDate)
     case .week:
       return timelineWeekRange.canNavigateForward
+    case .month:
+      return timelineMonthRange.canNavigateForward
     }
   }
 
@@ -177,6 +189,8 @@ extension MainView {
       return !timelineIsToday(selectedDate)
     case .week:
       return !timelineWeekRange.containsToday
+    case .month:
+      return !timelineMonthRange.containsToday
     }
   }
 
@@ -185,7 +199,7 @@ extension MainView {
     switch timelineMode {
     case .day:
       return ("\(totalHours) hours", " tracked this week")
-    case .week:
+    case .week, .month:
       return ("\(totalHours) hours", " of activities tracked this week")
     }
   }
@@ -214,6 +228,8 @@ extension MainView {
       return Calendar.current.date(byAdding: .day, value: -1, to: selectedDate) ?? selectedDate
     case .week:
       return Calendar.current.date(byAdding: .day, value: -7, to: selectedDate) ?? selectedDate
+    case .month:
+      return Calendar.current.date(byAdding: .month, value: -1, to: selectedDate) ?? selectedDate
     }
   }
 
@@ -223,6 +239,8 @@ extension MainView {
       return Calendar.current.date(byAdding: .day, value: 1, to: selectedDate) ?? selectedDate
     case .week:
       return Calendar.current.date(byAdding: .day, value: 7, to: selectedDate) ?? selectedDate
+    case .month:
+      return Calendar.current.date(byAdding: .month, value: 1, to: selectedDate) ?? selectedDate
     }
   }
 
@@ -291,7 +309,7 @@ extension MainView {
 
   func selectTimelineActivity(_ activity: TimelineActivity) {
     switch timelineMode {
-    case .day:
+    case .day, .month:
       selectedActivity = activity
     case .week:
       if isWeekTimelineInspectorVisible {

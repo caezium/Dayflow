@@ -238,6 +238,19 @@ extension MainView {
           // matching the "dive in" feel when Day settles to 1 behind it.
           .transition(.opacity.combined(with: .scale(scale: 1.05, anchor: .center)))
           .zIndex(timelineMode == .week ? 1 : 0)
+
+        case .month:
+          MonthTimelineView(
+            monthRange: timelineMonthRange,
+            onSelectDay: { date in
+              setSelectedDate(date)
+              setTimelineMode(.day)
+            }
+          )
+          // Month zooms out one step further than Week: same pull-back feel,
+          // slightly larger start scale.
+          .transition(.opacity.combined(with: .scale(scale: 1.08, anchor: .center)))
+          .zIndex(timelineMode == .month ? 1 : 0)
         }
       }
       .frame(minWidth: 0, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -297,6 +310,9 @@ extension MainView {
         dayTimelineInspectorContent(geo: geo)
       case .week:
         weekTimelineInspectorContent(geo: geo)
+      case .month:
+        // Month has no inspector; the panel width is 0 in this mode.
+        Color.clear
       }
     }
     .frame(width: timelineInspectorWidth)

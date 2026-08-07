@@ -154,7 +154,7 @@ extension MainView {
     // Matches the pinned widths of each control (Figma-spec accurate).
     let chevronsWidth = (TimelineNavigationLayout.arrowSize * 2) + 2
     let calendarWidth: CGFloat = 36
-    let dayWeekWidth: CGFloat = 104
+    let dayWeekWidth: CGFloat = 156
     let todayWidth: CGFloat = 56
     let gap = TimelineNavigationLayout.calendarGap
     let datePad: CGFloat = 10
@@ -459,7 +459,7 @@ extension MainView {
         .pointingHandCursorOnHover(reassertOnPressEnd: true)
       }
     }
-    .frame(width: 104, height: 30)
+    .frame(width: 156, height: 30)
     .background(Color(hex: "FFEFE4"))
     .clipShape(Capsule(style: .continuous))
     .overlay(
