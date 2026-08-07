@@ -22,6 +22,13 @@ final class NotificationService: NSObject, ObservableObject {
 
   private let center = UNUserNotificationCenter.current()
 
+  /// UNUserNotificationCenter's mutating calls (add/remove) perform a
+  /// synchronous XPC round-trip to usernotificationsd with no timeout; if the
+  /// daemon stalls, the calling thread hangs forever. Route them through this
+  /// queue so a wedged daemon can never freeze the UI.
+  private static let centerQueue = DispatchQueue(
+    label: "com.dayflow.notification-center", qos: .utility)
+
   @Published private(set) var permissionGranted: Bool = false
 
   override private init() {
@@ -205,7 +212,6 @@ final class NotificationService: NSObject, ObservableObject {
       }
 
       let identifier = "nudge.distraction"
-      center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
       let content = UNMutableNotificationContent()
       content.title = "Time for a reset?"
@@ -220,11 +226,15 @@ final class NotificationService: NSObject, ObservableObject {
         trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
       )
 
-      center.add(request) { error in
-        if let error {
-          print("[NotificationService] Failed to schedule distraction nudge: \(error)")
-        } else {
-          print("[NotificationService] Scheduled distraction nudge minutes=\(distractionMinutes)")
+      let center = self.center
+      Self.centerQueue.async {
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.add(request) { error in
+          if let error {
+            print("[NotificationService] Failed to schedule distraction nudge: \(error)")
+          } else {
+            print("[NotificationService] Scheduled distraction nudge minutes=\(distractionMinutes)")
+          }
         }
       }
     }
@@ -243,7 +253,6 @@ final class NotificationService: NSObject, ObservableObject {
       guard Self.canScheduleNotifications(for: status) else { return }
 
       let identifier = "workreminder.start"
-      center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
       let content = UNMutableNotificationContent()
       content.title = "Ready to start?"
@@ -259,9 +268,13 @@ final class NotificationService: NSObject, ObservableObject {
         content: content,
         trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false)
       )
-      center.add(request) { error in
-        if let error {
-          print("[NotificationService] Failed to schedule work reminder: \(error)")
+      let center = self.center
+      Self.centerQueue.async {
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.add(request) { error in
+          if let error {
+            print("[NotificationService] Failed to schedule work reminder: \(error)")
+          }
         }
       }
     }
@@ -291,7 +304,10 @@ final class NotificationService: NSObject, ObservableObject {
   }
 
   func cancelWeeklyUnlockNotification() {
-    center.removePendingNotificationRequests(withIdentifiers: ["weekly.unlock"])
+    let center = self.center
+    Self.centerQueue.async {
+      center.removePendingNotificationRequests(withIdentifiers: ["weekly.unlock"])
+    }
   }
 
   // MARK: - Private Methods
@@ -312,9 +328,6 @@ final class NotificationService: NSObject, ObservableObject {
         + "day=\(day) alert_setting=\(Self.notificationSettingName(settings.alertSetting)) "
         + "sound_setting=\(Self.notificationSettingName(settings.soundSetting))"
     )
-    center.removePendingNotificationRequests(withIdentifiers: [identifier])
-    print("[NotificationService] removed pending notification identifier=\(identifier)")
-
     let content = UNMutableNotificationContent()
     content.title = "Your daily recap for yesterday is ready"
     content.body = "Tap to open it in Daily view."
@@ -331,7 +344,10 @@ final class NotificationService: NSObject, ObservableObject {
     let authStatus = Self.authorizationStatusName(settings.authorizationStatus)
     let alertSetting = Self.notificationSettingName(settings.alertSetting)
     let soundSetting = Self.notificationSettingName(settings.soundSetting)
-    center.add(request) { error in
+    let center = self.center
+    Self.centerQueue.async {
+      center.removePendingNotificationRequests(withIdentifiers: [identifier])
+      center.add(request) { error in
       if let error {
         print(
           "[NotificationService] Failed to schedule daily recap notification (\(day)): \(error)")
@@ -363,6 +379,7 @@ final class NotificationService: NSObject, ObservableObject {
           "alert_setting": alertSetting,
           "sound_setting": soundSetting,
         ])
+      }
     }
   }
 
@@ -372,8 +389,6 @@ final class NotificationService: NSObject, ObservableObject {
   ) async -> WeeklyUnlockNotificationScheduleResult {
     let identifier = "weekly.unlock"
     let interval = max(1, unlockDate.timeIntervalSinceNow)
-
-    center.removePendingNotificationRequests(withIdentifiers: [identifier])
 
     let content = UNMutableNotificationContent()
     content.title = "Weekly view is ready"
@@ -387,21 +402,25 @@ final class NotificationService: NSObject, ObservableObject {
       trigger: UNTimeIntervalNotificationTrigger(timeInterval: interval, repeats: false)
     )
 
+    let center = self.center
     return await withCheckedContinuation { continuation in
-      center.add(request) { error in
-        if let error {
-          print("[NotificationService] Failed to schedule weekly unlock notification: \(error)")
-          continuation.resume(returning: .failed)
-          return
-        }
+      Self.centerQueue.async {
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.add(request) { error in
+          if let error {
+            print("[NotificationService] Failed to schedule weekly unlock notification: \(error)")
+            continuation.resume(returning: .failed)
+            return
+          }
 
-        print(
-          "[NotificationService] Scheduled weekly unlock notification "
-            + "identifier=\(identifier) seconds=\(Int(interval.rounded())) "
-            + "alert_setting=\(Self.notificationSettingName(settings.alertSetting)) "
-            + "sound_setting=\(Self.notificationSettingName(settings.soundSetting))"
-        )
-        continuation.resume(returning: .scheduled)
+          print(
+            "[NotificationService] Scheduled weekly unlock notification "
+              + "identifier=\(identifier) seconds=\(Int(interval.rounded())) "
+              + "alert_setting=\(Self.notificationSettingName(settings.alertSetting)) "
+              + "sound_setting=\(Self.notificationSettingName(settings.soundSetting))"
+          )
+          continuation.resume(returning: .scheduled)
+        }
       }
     }
   }
@@ -470,9 +489,12 @@ final class NotificationService: NSObject, ObservableObject {
       trigger: trigger
     )
 
-    center.add(request) { error in
-      if let error = error {
-        print("[NotificationService] Failed to schedule \(identifier): \(error)")
+    let center = self.center
+    Self.centerQueue.async {
+      center.add(request) { error in
+        if let error = error {
+          print("[NotificationService] Failed to schedule \(identifier): \(error)")
+        }
       }
     }
   }
