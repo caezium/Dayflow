@@ -233,6 +233,30 @@ extension MainView {
           "week_end": dayString(weekRange.weekEnd),
           "activity_count": cards.count,
         ]
+
+      case .month:
+        // Month copy: one day-formatted section per day, joined. Reuses the
+        // day formatter so the per-card layout stays identical everywhere.
+        let monthRange = timelineMonthRange
+        let cards = StorageManager.shared.fetchTimelineCardsByTimeRange(
+          from: monthRange.monthStart,
+          to: monthRange.monthEnd
+        )
+        let cardsByDay = Dictionary(grouping: cards, by: \.day)
+        let sections = monthRange.gridDays
+          .filter(\.isInMonth)
+          .compactMap { day -> String? in
+            guard let dayCards = cardsByDay[day.dayString], !dayCards.isEmpty else { return nil }
+            return TimelineClipboardFormatter.makeClipboardText(for: day.date, cards: dayCards)
+          }
+        clipboardText = sections.isEmpty
+          ? "No activity recorded in \(monthRange.title)."
+          : sections.joined(separator: "\n\n")
+        analyticsProps = [
+          "timeline_mode": timelineMode.rawValue,
+          "month": monthRange.title,
+          "activity_count": cards.count,
+        ]
       }
 
       guard !Task.isCancelled else { return }
