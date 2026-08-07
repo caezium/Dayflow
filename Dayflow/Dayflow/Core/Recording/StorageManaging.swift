@@ -39,6 +39,10 @@ protocol StorageManaging: Sendable {
   func fetchTotalMinutesTrackedForWeek(containing date: Date) -> Double
   func replaceTimelineCardsInRange(from: Date, to: Date, with: [TimelineCardShell], batchId: Int64)
     -> (insertedIds: [Int64], deletedVideoPaths: [String])
+  func beginProcessingAttempt(batchId: Int64, attemptId: ProcessingAttemptID) throws
+  func commitSuccessfulProcessing(_ commit: SuccessfulProcessingCommit) throws
+    -> ProcessingCommitOutcome
+  func commitFailedProcessing(_ commit: FailedProcessingCommit) throws -> ProcessingCommitOutcome
   func fetchRecentTimelineCardsForDebug(limit: Int) -> [TimelineCardDebugEntry]
 
   func updateTimelineCardCategory(cardId: Int64, category: String)

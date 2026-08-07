@@ -54,37 +54,42 @@ enum TimelineActivityLoader {
     let timelineDate = timelineDisplayDate(from: selectedDate, now: now)
     let dayString = DateFormatter.yyyyMMdd.string(from: timelineDate)
     let cards = storageManager.fetchTimelineCards(forDay: dayString)
-    let visibleCards = displayableCards(cards, storageManager: storageManager)
-    return (dayString, timelineDate, buildActivities(from: visibleCards))
+    return (
+      dayString, timelineDate,
+      buildActivities(from: cards, isRetryableFailure: retryChecker(storageManager))
+    )
   }
 
   static func activities(
     in weekRange: TimelineWeekRange,
     storageManager: StorageManaging = StorageManager.shared
   ) -> [TimelineActivity] {
-    let cards = storageManager.fetchTimelineCardsByTimeRange(
-      from: weekRange.weekStart, to: weekRange.weekEnd)
-    return buildActivities(from: displayableCards(cards, storageManager: storageManager))
+    activities(from: weekRange.weekStart, to: weekRange.weekEnd, storageManager: storageManager)
   }
 
-  static func shouldDisplay(_ card: TimelineCard, storageManager: StorageManaging) -> Bool {
-    guard card.title == "Processing failed" else { return true }
-    return isRetryableFailedCard(card, storageManager: storageManager)
+  static func activities(
+    from start: Date,
+    to end: Date,
+    storageManager: StorageManaging = StorageManager.shared
+  ) -> [TimelineActivity] {
+    let cards = storageManager.fetchTimelineCardsByTimeRange(from: start, to: end)
+    return buildActivities(from: cards, isRetryableFailure: retryChecker(storageManager))
   }
 
-  static func isRetryableFailedCard(_ card: TimelineCard, storageManager: StorageManaging) -> Bool {
-    guard card.title == "Processing failed", let batchId = card.batchId else { return false }
-    return hasRetrySourceScreenshots(for: batchId, storageManager: storageManager)
+  // Memoizes screenshot availability per batch so a day full of failed cards
+  // costs one DB lookup + file stat per batch instead of one per card.
+  private static func retryChecker(_ storageManager: StorageManaging) -> (TimelineCard) -> Bool {
+    var cache: [Int64: Bool] = [:]
+    return { card in
+      guard let batchId = card.batchId else { return false }
+      if let cached = cache[batchId] { return cached }
+      let available = hasRetrySourceScreenshots(for: batchId, storageManager: storageManager)
+      cache[batchId] = available
+      return available
+    }
   }
 
-  private static func displayableCards(
-    _ cards: [TimelineCard],
-    storageManager: StorageManaging
-  ) -> [TimelineCard] {
-    cards.filter { shouldDisplay($0, storageManager: storageManager) }
-  }
-
-  private static func hasRetrySourceScreenshots(
+  static func hasRetrySourceScreenshots(
     for batchId: Int64,
     storageManager: StorageManaging
   ) -> Bool {
@@ -93,13 +98,26 @@ enum TimelineActivityLoader {
     }
   }
 
-  static func buildActivities(from cards: [TimelineCard]) -> [TimelineActivity] {
+  static func buildActivities(
+    from cards: [TimelineCard],
+    isRetryableFailure: (TimelineCard) -> Bool = { _ in true }
+  ) -> [TimelineActivity] {
     let calendar = Calendar.current
     var results: [TimelineActivity] = []
     var idCounts: [String: Int] = [:]
     results.reserveCapacity(cards.count)
 
     for card in cards {
+      // A canonical failure card whose batch has since been reprocessed
+      // successfully is a leftover from the failed attempt — the real cards
+      // for that period exist alongside it, so it must not render.
+      if TimelineFailureCard.isCanonical(card),
+        let statusRaw = card.batchStatus,
+        AnalysisBatchStatus(rawValue: statusRaw)?.isSuccessful == true
+      {
+        continue
+      }
+
       guard
         let baseDay = DateFormatter.yyyyMMdd.date(from: card.day),
         let parsedStart = timeFormatter.date(from: card.startTimestamp),
@@ -159,6 +177,16 @@ enum TimelineActivityLoader {
       idCounts[baseId] = seenCount + 1
       let finalId = seenCount == 0 ? baseId : "\(baseId)-\(seenCount)"
 
+      let isFailedCard = card.title == "Processing failed"
+      let retryable = isFailedCard ? isRetryableFailure(card) : true
+      // Permanent failures get an honest summary everywhere the card renders:
+      // the stored one promises "can be reprocessed", which is no longer true.
+      let summary =
+        isFailedCard && !retryable
+        ? "Dayflow couldn't process this period, and the original screen recordings "
+          + "have since been deleted — so it can't be reprocessed."
+        : card.summary
+
       results.append(
         TimelineActivity(
           id: finalId,
@@ -167,7 +195,7 @@ enum TimelineActivityLoader {
           startTime: adjustedStartDate,
           endTime: adjustedEndDate,
           title: card.title,
-          summary: card.summary,
+          summary: summary,
           detailedSummary: card.detailedSummary,
           category: card.category,
           subcategory: card.subcategory,
@@ -175,7 +203,8 @@ enum TimelineActivityLoader {
           videoSummaryURL: card.videoSummaryURL,
           screenshot: nil,
           appSites: card.appSites,
-          isBackupGenerated: card.isBackupGenerated
+          isBackupGenerated: card.isBackupGenerated,
+          isRetryableFailure: retryable
         )
       )
     }

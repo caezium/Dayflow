@@ -48,12 +48,21 @@ struct CardInsightSection: View {
 
         footer
 
-        if !insight.rawCalls.isEmpty {
+        if !insight.attemptGroups.isEmpty {
           rawToggle
           if showRaw {
-            VStack(alignment: .leading, spacing: 6) {
-              ForEach(insight.rawCalls) { call in
-                RawCallRow(call: call)
+            VStack(alignment: .leading, spacing: 8) {
+              ForEach(insight.attemptGroups) { group in
+                VStack(alignment: .leading, spacing: 6) {
+                  if let title = group.title {
+                    Text(title.uppercased())
+                      .font(Font.custom("Figtree", size: 10).weight(.semibold))
+                      .foregroundColor(labelColor)
+                  }
+                  ForEach(group.calls) { call in
+                    RawCallRow(call: call)
+                  }
+                }
               }
             }
           }
@@ -133,7 +142,7 @@ struct CardInsightSection: View {
       HStack(spacing: 5) {
         Image(systemName: showRaw ? "chevron.down" : "chevron.right")
           .font(.system(size: 8, weight: .semibold))
-        Text(showRaw ? "Hide raw LLM calls" : "Show raw LLM calls (\(insight.rawCalls.count))")
+        Text(showRaw ? "Hide raw LLM calls" : "Show raw LLM calls (\(insight.rawCallCount))")
           .font(Font.custom("Figtree", size: 11).weight(.medium))
       }
       .foregroundColor(labelColor)
@@ -177,18 +186,31 @@ private struct RawCallRow: View {
       .buttonStyle(.plain)
       .pointingHandCursor()
 
-      if open, let body = displayBody {
-        ScrollView {
-          Text(body)
-            .font(.system(size: 10.5, design: .monospaced))
-            .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
-            .frame(maxWidth: .infinity, alignment: .leading)
+      if open {
+        if call.status != "success",
+          let errorMessage = call.errorMessage?.trimmingCharacters(in: .whitespacesAndNewlines),
+          !errorMessage.isEmpty
+        {
+          Text(errorMessage)
+            .font(Font.custom("Figtree", size: 11))
+            .foregroundColor(Color(red: 0.72, green: 0.22, blue: 0.18))
+            .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
-            .padding(8)
         }
-        .frame(maxHeight: 220)
-        .background(Color.black.opacity(0.035))
-        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+
+        if let body = displayBody {
+          ScrollView {
+            Text(body)
+              .font(.system(size: 10.5, design: .monospaced))
+              .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .textSelection(.enabled)
+              .padding(8)
+          }
+          .frame(maxHeight: 220)
+          .background(Color.black.opacity(0.035))
+          .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
       }
     }
   }
@@ -196,7 +218,10 @@ private struct RawCallRow: View {
   private var displayBody: String? {
     guard let raw = call.responseBody?.trimmingCharacters(in: .whitespacesAndNewlines),
       !raw.isEmpty
-    else { return call.status == "success" ? nil : "(no response body)" }
+    else {
+      // Failed calls without a body still show their stored error message above.
+      return call.status == "success" || call.errorMessage != nil ? nil : "(no response body)"
+    }
     let limit = 4000
     return raw.count > limit ? String(raw.prefix(limit)) + "\n… (truncated)" : raw
   }

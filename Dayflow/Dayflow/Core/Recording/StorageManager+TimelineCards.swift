@@ -342,10 +342,12 @@ extension StorageManager {
         try Row.fetchAll(
           db,
           sql: """
-                SELECT * FROM timeline_cards
-                WHERE batch_id = ?
-                  AND is_deleted = 0
-                ORDER BY start ASC
+                SELECT tc.*, ab.status AS batch_status
+                FROM timeline_cards tc
+                LEFT JOIN analysis_batches ab ON ab.id = tc.batch_id
+                WHERE tc.batch_id = ?
+                  AND tc.is_deleted = 0
+                ORDER BY tc.start ASC
             """, arguments: [batchId]
         ).map { row in
           var distractions: [Distraction]? = nil
@@ -379,7 +381,9 @@ extension StorageManager {
             videoSummaryURL: row["video_summary_url"],
             otherVideoSummaryURLs: nil,
             appSites: appSites,
-            isBackupGenerated: isBackupGenerated
+            isBackupGenerated: isBackupGenerated,
+            processingAttemptId: row["processing_attempt_id"],
+            batchStatus: row["batch_status"]
           )
         }
       }) ?? []
@@ -501,10 +505,12 @@ extension StorageManager {
       try Row.fetchAll(
         db,
         sql: """
-              SELECT * FROM timeline_cards
-              WHERE start_ts >= ? AND start_ts < ?
-                AND is_deleted = 0
-              ORDER BY start_ts ASC, start ASC
+              SELECT tc.*, ab.status AS batch_status
+              FROM timeline_cards tc
+              LEFT JOIN analysis_batches ab ON ab.id = tc.batch_id
+              WHERE tc.start_ts >= ? AND tc.start_ts < ?
+                AND tc.is_deleted = 0
+              ORDER BY tc.start_ts ASC, tc.start ASC
           """, arguments: [startTs, endTs]
       )
       .map { row in
@@ -563,11 +569,13 @@ extension StorageManager {
       try Row.fetchAll(
         db,
         sql: """
-              SELECT * FROM timeline_cards
-              WHERE ((start_ts < ? AND end_ts > ?)
-                 OR (start_ts >= ? AND start_ts < ?))
-                AND is_deleted = 0
-              ORDER BY start_ts ASC
+              SELECT tc.*, ab.status AS batch_status
+              FROM timeline_cards tc
+              LEFT JOIN analysis_batches ab ON ab.id = tc.batch_id
+              WHERE ((tc.start_ts < ? AND tc.end_ts > ?)
+                 OR (tc.start_ts >= ? AND tc.start_ts < ?))
+                AND tc.is_deleted = 0
+              ORDER BY tc.start_ts ASC
           """, arguments: [toTs, fromTs, fromTs, toTs]
       )
       .map { row in
@@ -661,22 +669,21 @@ extension StorageManager {
   }
 
   /// Returns total minutes of tracked activities for the week containing the given date.
-  /// Week starts on Monday at 4 AM and ends the following Monday at 4 AM.
+  /// The week starts at 4 AM on the user's configured first weekday and ends
+  /// 7 days later, matching the Week timeline and Weekly dashboard.
   func fetchTotalMinutesTrackedForWeek(containing date: Date) -> Double {
-    let calendar = Calendar.current
+    var calendar = Calendar.current
+    calendar.firstWeekday = WeekPreferences.weekStartWeekday
 
-    // Find the Monday of the week containing this date
     var weekStart = calendar.date(
       from: calendar.dateComponents([.yearForWeekOfYear, .weekOfYear], from: date))!
-    // Set to 4 AM on that Monday
     weekStart = calendar.date(bySettingHour: 4, minute: 0, second: 0, of: weekStart) ?? weekStart
 
-    // If current date is before 4 AM Monday, go back one week
+    // If current date is before the week's 4 AM boundary, go back one week
     if date < weekStart {
       weekStart = calendar.date(byAdding: .weekOfYear, value: -1, to: weekStart) ?? weekStart
     }
 
-    // Week ends at 4 AM the following Monday
     let weekEnd = calendar.date(byAdding: .weekOfYear, value: 1, to: weekStart) ?? weekStart
 
     return fetchTotalMinutesTracked(from: weekStart, to: weekEnd)
@@ -721,15 +728,17 @@ extension StorageManager {
         try Row.fetchAll(
           db,
           sql: """
-                SELECT created_at, batch_id, call_group_id, attempt, provider, model, operation, status, latency_ms, http_status, request_method, request_url, request_body, response_body, error_message
+                SELECT id, created_at, batch_id, processing_attempt_id, call_group_id, attempt, provider, model, operation, status, latency_ms, http_status, request_method, request_url, request_body, response_body, error_domain, error_code, error_message
                 FROM llm_calls
                 ORDER BY created_at DESC, id DESC
                 LIMIT ?
             """, arguments: [limit]
         ).map { row in
           LLMCallDebugEntry(
+            id: row["id"],
             createdAt: row["created_at"],
             batchId: row["batch_id"],
+            processingAttemptId: row["processing_attempt_id"],
             callGroupId: row["call_group_id"],
             attempt: row["attempt"] ?? 0,
             provider: row["provider"] ?? "",
@@ -742,6 +751,8 @@ extension StorageManager {
             requestURL: row["request_url"],
             requestBody: row["request_body"],
             responseBody: row["response_body"],
+            errorDomain: row["error_domain"],
+            errorCode: row["error_code"],
             errorMessage: row["error_message"]
           )
         }
@@ -768,7 +779,7 @@ extension StorageManager {
         try Row.fetchAll(
           db,
           sql: """
-                SELECT created_at, batch_id, call_group_id, attempt, provider, model, operation, status, latency_ms, http_status, request_method, request_url, request_body, response_body, error_message
+                SELECT id, created_at, batch_id, processing_attempt_id, call_group_id, attempt, provider, model, operation, status, latency_ms, http_status, request_method, request_url, request_body, response_body, error_domain, error_code, error_message
                 FROM llm_calls
                 WHERE batch_id IN (\(placeholders))
                 ORDER BY created_at DESC, id DESC
@@ -776,8 +787,10 @@ extension StorageManager {
             """, arguments: StatementArguments(batchIds + [Int64(limit)])
         ).map { row in
           LLMCallDebugEntry(
+            id: row["id"],
             createdAt: row["created_at"],
             batchId: row["batch_id"],
+            processingAttemptId: row["processing_attempt_id"],
             callGroupId: row["call_group_id"],
             attempt: row["attempt"] ?? 0,
             provider: row["provider"] ?? "",
@@ -790,6 +803,8 @@ extension StorageManager {
             requestURL: row["request_url"],
             requestBody: row["request_body"],
             responseBody: row["response_body"],
+            errorDomain: row["error_domain"],
+            errorCode: row["error_code"],
             errorMessage: row["error_message"]
           )
         }
@@ -906,11 +921,6 @@ extension StorageManager {
     var insertedIds: [Int64] = []
     var videoPaths: [String] = []
 
-    // Setup date formatter for parsing clock times
-    let timeFormatter = DateFormatter()
-    timeFormatter.dateFormat = "h:mm a"
-    timeFormatter.locale = Locale(identifier: "en_US_POSIX")
-
     try? timedWrite("replaceTimelineCardsInRange(\(newCards.count)_cards)") { db in
       // First, fetch the video paths that will be soft-deleted
       // Note: We exclude error cards (category='System') from other batches to preserve them
@@ -983,53 +993,13 @@ extension StorageManager {
           String(data: $0, encoding: .utf8)
         }
 
-        // Resolve clock-only timestamps by picking the nearest day to the window midpoint
-        let calendar = Calendar.current
-        let anchor = from.addingTimeInterval(to.timeIntervalSince(from) / 2.0)
+        guard let resolved = TimelineClockRangeResolver.resolve(
+          start: card.startTimestamp, end: card.endTimestamp, from: from, to: to)
+        else { continue }
 
-        let resolveClock: (Int, Int) -> Date = { hour, minute in
-          guard
-            let sameDay = calendar.date(bySettingHour: hour, minute: minute, second: 0, of: anchor)
-          else {
-            return anchor
-          }
-          let previousDay = calendar.date(byAdding: .day, value: -1, to: sameDay) ?? sameDay
-          let nextDay = calendar.date(byAdding: .day, value: 1, to: sameDay) ?? sameDay
-
-          let candidates = [previousDay, sameDay, nextDay]
-          return candidates.min { lhs, rhs in
-            abs(lhs.timeIntervalSince(anchor)) < abs(rhs.timeIntervalSince(anchor))
-          } ?? sameDay
-        }
-
-        guard let startTime = timeFormatter.date(from: card.startTimestamp),
-          let endTime = timeFormatter.date(from: card.endTimestamp)
-        else {
-          continue
-        }
-
-        let startComponents = calendar.dateComponents([.hour, .minute], from: startTime)
-        guard let startHour = startComponents.hour, let startMinute = startComponents.minute else {
-          continue
-        }
-
-        let startDate = resolveClock(startHour, startMinute)
-
-        let startTs = Int(startDate.timeIntervalSince1970)
-
-        let endComponents = calendar.dateComponents([.hour, .minute], from: endTime)
-        guard let endHour = endComponents.hour, let endMinute = endComponents.minute else {
-          continue
-        }
-
-        var endDate = resolveClock(endHour, endMinute)
-
-        // Handle midnight crossing: if end time is before start time, it must be the next day
-        if endDate < startDate {
-          endDate = calendar.date(byAdding: .day, value: 1, to: endDate) ?? endDate
-        }
-
-        let endTs = Int(endDate.timeIntervalSince1970)
+        let startDate = resolved.start
+        let startTs = Int(resolved.start.timeIntervalSince1970)
+        let endTs = Int(resolved.end.timeIntervalSince1970)
 
         // Calculate the day string using 4 AM boundary rules
         let (dayString, _, _) = startDate.getDayInfoFor4AMBoundary()
@@ -1038,13 +1008,15 @@ extension StorageManager {
           sql: """
                 INSERT INTO timeline_cards(
                     batch_id, start, end, start_ts, end_ts, day, title,
-                    summary, category, subcategory, detailed_summary, metadata
+                    summary, category, subcategory, detailed_summary, metadata,
+                    processing_attempt_id
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
           arguments: [
-            batchId, card.startTimestamp, card.endTimestamp, startTs, endTs, dayString, card.title,
-            card.summary, card.category, card.subcategory, card.detailedSummary, metadataString,
+            card.sourceBatchId ?? batchId, card.startTimestamp, card.endTimestamp, startTs, endTs,
+            dayString, card.title, card.summary, card.category, card.subcategory,
+            card.detailedSummary, metadataString, ProcessingAttemptContext.id,
           ])
 
         // Capture the ID of the inserted card

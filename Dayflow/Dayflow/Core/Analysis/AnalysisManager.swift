@@ -451,6 +451,12 @@ final class AnalysisManager: AnalysisManaging {
       return
     }
 
+    guard screenshotsInBatch.contains(where: { FileManager.default.fileExists(atPath: $0.filePath) })
+    else {
+      completion?(.failure(TimelineProcessingError.retrySourceUnavailable))
+      return
+    }
+
     let itemCount = screenshotsInBatch.count
     let totalDurationSeconds: TimeInterval
     if let first = screenshotsInBatch.first, let last = screenshotsInBatch.last {
@@ -510,9 +516,18 @@ final class AnalysisManager: AnalysisManaging {
     ]
     SentryHelper.addBreadcrumb(breadcrumb)
 
-    updateBatchStatus(batchId: batchId, status: "processing")
+    let attemptId = UUID().uuidString
+    do {
+      try store.beginProcessingAttempt(batchId: batchId, attemptId: attemptId)
+    } catch {
+      transaction?.finish(status: .internalError)
+      completion?(.failure(error))
+      return
+    }
 
-    llmService.processBatch(batchId, progressHandler: progressHandler) {
+    llmService.processBatch(
+      batchId, attemptId: attemptId, progressHandler: progressHandler
+    ) {
       [weak self] (result: Result<ProcessedBatchResult, Error>) in
       guard let self else { return }
 
@@ -547,8 +562,8 @@ final class AnalysisManager: AnalysisManaging {
         }
         print("✅ DEBUG: Duplicate check complete\n")
 
-        // Mark batch as completed immediately
-        self.updateBatchStatus(batchId: batchId, status: "completed")
+        // The successful processing transaction already committed cards,
+        // observations, and the terminal batch status atomically.
 
         // Now that fresh activity exists for this day, let the AI check whether
         // any of the user's open tasks are done. Gated + debounced internally so
@@ -574,7 +589,8 @@ final class AnalysisManager: AnalysisManaging {
         // Finish performance transaction - LLM processing failed
         transaction?.finish(status: .internalError)
 
-        self.markBatchFailed(batchId: batchId, reason: err.localizedDescription)
+        // The failure transaction owns status and error-card persistence. A
+        // superseded attempt returns failure without overwriting a newer result.
         completion?(.failure(err))
       }
     }

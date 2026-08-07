@@ -25,6 +25,9 @@ struct TimelineActivity: Identifiable {
   let screenshot: NSImage?
   let appSites: AppSites?
   let isBackupGenerated: Bool?
+  // False only for "Processing failed" cards whose source screenshots are gone —
+  // those can never be reprocessed, so retry UI must not be offered.
+  var isRetryableFailure: Bool = true
 
   static func stableId(
     recordId: Int64?, batchId: Int64?, startTime: Date, endTime: Date, title: String,
@@ -64,7 +67,8 @@ struct TimelineActivity: Identifiable {
       videoSummaryURL: videoSummaryURL,
       screenshot: screenshot,
       appSites: appSites,
-      isBackupGenerated: isBackupGenerated
+      isBackupGenerated: isBackupGenerated,
+      isRetryableFailure: isRetryableFailure
     )
   }
 
@@ -104,7 +108,8 @@ struct TimelineActivity: Identifiable {
       videoSummaryURL: newVideoSummaryURL,
       screenshot: screenshot,
       appSites: appSites,
-      isBackupGenerated: isBackupGenerated
+      isBackupGenerated: isBackupGenerated,
+      isRetryableFailure: isRetryableFailure
     )
   }
 }

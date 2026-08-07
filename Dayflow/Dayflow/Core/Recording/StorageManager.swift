@@ -482,6 +482,7 @@ final class StorageManager: StorageManaging, @unchecked Sendable {
                   reason TEXT,
                   llm_metadata TEXT,
                   detailed_transcription TEXT,
+                  processing_attempt_id TEXT,
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
               );
               CREATE INDEX IF NOT EXISTS idx_analysis_batches_status ON analysis_batches(status);
@@ -510,6 +511,7 @@ final class StorageManager: StorageManaging, @unchecked Sendable {
                   detailed_summary TEXT,
                   metadata TEXT,             -- For distractions JSON
                   video_summary_url TEXT,    -- Link to video summary on filesystem
+                  processing_attempt_id TEXT,
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
               );
               CREATE INDEX IF NOT EXISTS idx_timeline_cards_day ON timeline_cards(day);
@@ -625,6 +627,7 @@ final class StorageManager: StorageManaging, @unchecked Sendable {
                   id INTEGER PRIMARY KEY AUTOINCREMENT,
                   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                   batch_id INTEGER NULL,
+                  processing_attempt_id TEXT NULL,
                   call_group_id TEXT NULL,
                   attempt INTEGER NOT NULL DEFAULT 1,
                   provider TEXT NOT NULL,
@@ -699,6 +702,33 @@ final class StorageManager: StorageManaging, @unchecked Sendable {
 
         print("✅ Added is_deleted column and composite indexes to timeline_cards")
       }
+
+      let batchColumns = try db.columns(in: "analysis_batches").map { $0.name }
+      if !batchColumns.contains("processing_attempt_id") {
+        try db.execute(
+          sql: "ALTER TABLE analysis_batches ADD COLUMN processing_attempt_id TEXT;")
+      }
+
+      if !timelineCardsColumns.contains("processing_attempt_id") {
+        try db.execute(
+          sql: "ALTER TABLE timeline_cards ADD COLUMN processing_attempt_id TEXT;")
+      }
+      try db.execute(
+        sql: """
+              CREATE INDEX IF NOT EXISTS idx_timeline_cards_processing_attempt
+              ON timeline_cards(processing_attempt_id)
+              WHERE is_deleted = 0;
+          """)
+
+      let llmCallColumns = try db.columns(in: "llm_calls").map { $0.name }
+      if !llmCallColumns.contains("processing_attempt_id") {
+        try db.execute(sql: "ALTER TABLE llm_calls ADD COLUMN processing_attempt_id TEXT;")
+      }
+      try db.execute(
+        sql: """
+              CREATE INDEX IF NOT EXISTS idx_llm_calls_processing_attempt
+              ON llm_calls(processing_attempt_id, created_at DESC);
+          """)
 
       let screenshotColumns = try db.columns(in: "screenshots").map { $0.name }
       if !screenshotColumns.contains("idle_seconds_at_capture") {

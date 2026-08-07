@@ -138,6 +138,7 @@ enum LLMLogger {
 
     return LLMCallDBRecord(
       batchId: ctx.batchId,
+      processingAttemptId: ProcessingAttemptContext.id,
       callGroupId: ctx.callGroupId,
       attempt: ctx.attempt,
       provider: ctx.provider,

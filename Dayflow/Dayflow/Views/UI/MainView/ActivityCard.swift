@@ -545,6 +545,22 @@ struct ActivityCard: View {
       .padding(.vertical, 8)
       .background(Color(red: 0.91, green: 0.85, blue: 0.8))
       .cornerRadius(200)
+    } else if !activity.isRetryableFailure {
+      // Permanent failure - the source recordings are gone, so there is
+      // nothing left to reprocess; show a non-interactive gray pill instead
+      // of a Retry button.
+      HStack(alignment: .center, spacing: 4) {
+        Image(systemName: "exclamationmark.triangle")
+          .font(.system(size: 12, weight: .medium))
+        Text("Can't retry — recordings deleted")
+          .font(.custom("Figtree", size: 13).weight(.medium))
+          .lineLimit(1)
+      }
+      .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.45))
+      .padding(.horizontal, 12)
+      .padding(.vertical, 8)
+      .background(Color(red: 0.92, green: 0.92, blue: 0.92))
+      .cornerRadius(200)
     } else {
       // Retry button - orange pill
       Button(action: { handleRetry(for: activity) }) {
@@ -569,9 +585,11 @@ struct ActivityCard: View {
   }
 
   private func handleRetry(for activity: TimelineActivity) {
+    // Retry reprocesses every retryable failed batch in this card's day, not
+    // just this one card, so a backlog clears in a single click.
     let dayString = activity.startTime.getDayInfoFor4AMBoundary().dayString
-    retryCoordinator.startRetry(for: dayString) { batchId in
-      onRetryBatchCompleted?(batchId)
+    retryCoordinator.startRetry(forDay: dayString) { completedBatchId in
+      onRetryBatchCompleted?(completedBatchId)
     }
   }
 
