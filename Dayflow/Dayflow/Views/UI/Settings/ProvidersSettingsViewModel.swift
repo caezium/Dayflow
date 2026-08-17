@@ -18,6 +18,7 @@ final class ProvidersSettingsViewModel: ObservableObject {
   @Published var localEngine: LocalEngine {
     didSet {
       guard oldValue != localEngine else { return }
+      guard !suppressLocalSettingsPersistence else { return }
       UserDefaults.standard.set(localEngine.rawValue, forKey: "llmLocalEngine")
       LocalModelPreferences.syncPreset(for: localEngine, modelId: localModelId)
       refreshUpgradeBannerState()
@@ -26,12 +27,14 @@ final class ProvidersSettingsViewModel: ObservableObject {
   @Published var localBaseURL: String {
     didSet {
       guard oldValue != localBaseURL else { return }
+      guard !suppressLocalSettingsPersistence else { return }
       UserDefaults.standard.set(localBaseURL, forKey: "llmLocalBaseURL")
     }
   }
   @Published var localModelId: String {
     didSet {
       guard oldValue != localModelId else { return }
+      guard !suppressLocalSettingsPersistence else { return }
       UserDefaults.standard.set(localModelId, forKey: "llmLocalModelId")
       LocalModelPreferences.syncPreset(for: localEngine, modelId: localModelId)
       refreshUpgradeBannerState()
@@ -40,6 +43,7 @@ final class ProvidersSettingsViewModel: ObservableObject {
   @Published var localAPIKey: String {
     didSet {
       guard oldValue != localAPIKey else { return }
+      guard !suppressLocalSettingsPersistence else { return }
       persistLocalAPIKey(localAPIKey)
     }
   }
@@ -127,6 +131,11 @@ final class ProvidersSettingsViewModel: ObservableObject {
 
   private var savedGeminiModel: GeminiModel
   private var pendingSetupRole: ProviderRoutingRole?
+  /// Set while `removeProviderConfig` blanks the local-provider fields. The
+  /// `@Published` locals above persist on `didSet`, so assigning "" to clear
+  /// the UI would immediately write "" straight back into UserDefaults — the
+  /// keys we just removed would reappear as empty strings.
+  private var suppressLocalSettingsPersistence = false
 
   init() {
     let preference = GeminiModelPreference.load()
@@ -620,6 +629,69 @@ final class ProvidersSettingsViewModel: ObservableObject {
 
   func isBackupProvider(_ providerId: LLMProviderID) -> Bool {
     routing.secondary == providerId
+  }
+
+  /// True when the user may wipe this provider's persisted configuration —
+  /// Keychain entries, setup-complete flags, endpoint URLs, model selections.
+  /// We refuse for the active primary so the app can never end up routing to a
+  /// provider with no credentials, and for Dayflow Pro, which is a server-side
+  /// entitlement rather than local config.
+  func canRemoveProviderConfig(_ providerId: LLMProviderID) -> Bool {
+    guard canModifyRouting else { return false }
+    guard providerId != .dayflow else { return false }
+    guard providerId != routing.primary else { return false }
+    return isProviderConfigured(providerId)
+  }
+
+  /// Wipes everything `isProviderConfigured(_:)` looks at for this provider, so
+  /// the row honestly reads as unconfigured afterwards. Clears the secondary
+  /// routing slot first when this provider holds it, rather than leaving
+  /// routing pointing at a provider whose credentials just went away.
+  func removeProviderConfig(_ providerId: LLMProviderID) {
+    guard canRemoveProviderConfig(providerId) else { return }
+
+    if routing.secondary == providerId {
+      clearBackupProvider()
+    }
+
+    switch providerId {
+    case .gemini:
+      KeychainManager.shared.delete(for: "gemini")
+      GeminiModelPreference.clear()
+    case .local:
+      suppressLocalSettingsPersistence = true
+      UserDefaults.standard.removeObject(forKey: "llmLocalBaseURL")
+      UserDefaults.standard.removeObject(forKey: "llmLocalModelId")
+      UserDefaults.standard.removeObject(forKey: "llmLocalEngine")
+      UserDefaults.standard.removeObject(forKey: "llmLocalAPIKey")
+      localBaseURL = ""
+      localModelId = ""
+      localAPIKey = ""
+      suppressLocalSettingsPersistence = false
+    case .openAICompatible:
+      KeychainManager.shared.delete(for: OpenAICompatiblePreferences.keychainProvider)
+      OpenAICompatiblePreferences.reset()
+      reloadOpenAICompatibleSettings()
+    case .chatGPT, .claude:
+      // These two carry no stored credentials — `isProviderConfigured` reads the
+      // CLI-installed probe plus the per-provider setup flag cleared below.
+      // Deliberately leaving the legacy shared `chatCLIPreferredTool` key alone:
+      // it predates exact provider identities and is shared between the two, so
+      // removing it while wiping one would silently reconfigure the other.
+      break
+    case .dayflow:
+      return
+    }
+
+    LLMProviderSetupPreferences.clearComplete(providerId)
+
+    AnalyticsService.shared.capture(
+      "provider_config_removed",
+      [
+        "provider": providerId.analyticsName,
+        "provider_id": providerId.rawValue,
+      ])
+    objectWillChange.send()
   }
 
   var backupProviderDisplayName: String {
