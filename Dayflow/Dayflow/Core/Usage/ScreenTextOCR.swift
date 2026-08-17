@@ -112,10 +112,15 @@ final class ScreenTextOCR: @unchecked Sendable {
     case .gemini:
       return geminiStatus()
     case .provider:
-      switch LLMProviderType.load() {
-      case .geminiDirect:
+      switch Self.primaryProviderID() {
+      case .gemini:
         return geminiStatus()
-      case .ollamaLocal(let endpoint):
+      case .local:
+        guard let endpoint = Self.localEndpoint() else {
+          return EngineStatus(
+            label: "Local model", capable: false,
+            note: "No local endpoint configured — OCR will use Apple Vision.")
+        }
         let model = UserDefaults.standard.string(forKey: "llmLocalModelId") ?? ""
         guard !model.isEmpty else {
           return EngineStatus(
@@ -128,12 +133,28 @@ final class ScreenTextOCR: @unchecked Sendable {
           note: capable
             ? "Vision-capable — used for OCR."
             : "This model isn't vision-capable — OCR will use Apple Vision.")
-      default:
+      case .chatGPT, .claude, .dayflow, .openAICompatible:
+        // The provider-backed OCR path speaks Gemini's and Ollama's image APIs
+        // only. The CLI agents take no images, Dayflow Pro is hosted, and
+        // OpenAI-compatible endpoints don't expose Ollama's capability probe.
         return EngineStatus(
           label: "Configured provider", capable: false,
           note: "This provider can't do local OCR — Apple Vision will be used.")
       }
     }
+  }
+
+  /// The routed primary provider, or `.gemini` if the routing store is
+  /// unreadable — OCR engine selection is cosmetic enough that a corrupt store
+  /// should degrade to the Gemini/Apple Vision path rather than throw.
+  private static func primaryProviderID() -> LLMProviderID {
+    (try? LLMProviderRoutingStore.load())?.primary ?? .gemini
+  }
+
+  private static func localEndpoint() -> String? {
+    let endpoint = UserDefaults.standard.string(forKey: "llmLocalBaseURL")?
+      .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    return endpoint.isEmpty ? nil : endpoint
   }
 
   private func ollamaSupportsVision(endpoint: String, model: String) async -> Bool {
@@ -177,12 +198,14 @@ final class ScreenTextOCR: @unchecked Sendable {
     case .gemini:
       return geminiEngine() ?? .appleVision
     case .provider:
-      switch LLMProviderType.load() {
-      case .geminiDirect:
+      switch Self.primaryProviderID() {
+      case .gemini:
         return geminiEngine() ?? .appleVision
-      case .ollamaLocal(let endpoint):
+      case .local:
+        guard let endpoint = Self.localEndpoint() else { return .appleVision }
         return ollamaEngine(endpoint: endpoint) ?? .appleVision
-      default:  // chatGPTClaude, dayflowBackend → no local image OCR path
+      case .chatGPT, .claude, .dayflow, .openAICompatible:
+        // No local image OCR path — see activeEngineStatus() for why.
         return .appleVision
       }
     }
