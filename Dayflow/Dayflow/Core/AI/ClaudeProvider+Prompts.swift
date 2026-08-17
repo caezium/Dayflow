@@ -141,7 +141,7 @@ extension ClaudeProvider {
           INPUTS:
           Previous cards: \(existingCardsJSON)
           New observations: \(transcriptText)
-
+          \(context.groundTruthUsage.map { "\n" + $0 + "\n" } ?? "")
           FINAL REQUIRED CHECK — APPLY AFTER READING ALL INPUTS:
           1. Obey the active mode above. In FRESH SEGMENT MODE, return exactly one card for the supplied span. Otherwise, re-segment the entire supplied span; old card endpoints are drafts, not preferred boundaries.
           2. In ongoing mode, scan observations and previous-card details for a distinct 5-9-minute episode that an earlier pass absorbed. If later evidence now makes a valid split possible, restore it as a 10-minute card by borrowing only the minimum adjacent minutes.
