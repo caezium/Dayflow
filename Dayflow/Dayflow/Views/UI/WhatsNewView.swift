@@ -664,34 +664,19 @@ struct WhatsNewView: View {
     .padding(.top, 6)
   }
 
-  /// Shows the live X embed, with the hand-drawn card as a fallback if the
-  /// widget can't load (offline, script blocked, or 10s timeout).
-  @ViewBuilder
+  /// Renders the release note's social preview as the local hand-drawn card.
+  ///
+  /// Upstream shows a live X embed here, which loads
+  /// https://platform.twitter.com/widgets.js into a WKWebView — a third-party
+  /// script that sees the user's IP and a request every time the What's New
+  /// sheet opens, purely to render a screenshot-equivalent. `data-dnt="true"`
+  /// is a request, not an enforcement. The fork always takes the offline
+  /// fallback path so no release note can reach out to X; the card still links
+  /// to the post for anyone who wants to open it deliberately.
   private func socialPreviewSection(_ preview: ReleaseNoteSocialPreview) -> some View {
-    if tweetEmbedState == .failed {
-      socialPreviewCard(preview)
-    } else {
-      ZStack(alignment: .topLeading) {
-        TweetEmbedWebView(
-          tweetURL: preview.url,
-          onEvent: handleTweetEmbedEvent
-        )
-        .frame(height: tweetEmbedState == .ready ? tweetEmbedHeight : 220)
-        .opacity(tweetEmbedState == .ready ? 1 : 0)
-
-        if tweetEmbedState == .loading {
-          tweetEmbedPlaceholder
-        }
-      }
-      .animation(.easeInOut(duration: 0.25), value: tweetEmbedHeight)
-      .animation(.easeInOut(duration: 0.25), value: tweetEmbedState == .ready)
-      .task {
-        try? await Task.sleep(nanoseconds: 10_000_000_000)
-        if tweetEmbedState == .loading {
-          tweetEmbedState = .failed
-        }
-      }
-    }
+    // TweetEmbedWebView and its helpers below are deliberately left in place
+    // but unreferenced, so re-syncing upstream keeps this to a one-line diff.
+    socialPreviewCard(preview)
   }
 
   private var tweetEmbedPlaceholder: some View {
