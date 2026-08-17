@@ -71,4 +71,8 @@ struct GeminiModelPreference: Codable {
       defaults.set(data, forKey: Self.storageKey)
     }
   }
+
+  static func clear(from defaults: UserDefaults = .standard) {
+    defaults.removeObject(forKey: storageKey)
+  }
 }

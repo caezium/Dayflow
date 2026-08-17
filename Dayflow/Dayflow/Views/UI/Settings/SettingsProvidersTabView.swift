@@ -5,6 +5,9 @@ struct SettingsProvidersTabView: View {
   @ObservedObject var viewModel: ProvidersSettingsViewModel
   @ObservedObject private var authManager = DayflowAuthManager.shared
 
+  /// Provider pending a config removal, driving the confirmation alert.
+  @State private var providerPendingRemoval: LLMProviderID?
+
   var body: some View {
     VStack(alignment: .leading, spacing: SettingsStyle.sectionSpacing) {
       if viewModel.currentProvider == .local, viewModel.showLocalModelUpgradeBanner {
@@ -43,6 +46,44 @@ struct SettingsProvidersTabView: View {
       if viewModel.hasCodexOrClaudeProviderInRouting {
         agentPromptCustomizationSection
       }
+    }
+    .alert(
+      "Remove configuration?",
+      isPresented: Binding(
+        get: { providerPendingRemoval != nil },
+        set: { newValue in if !newValue { providerPendingRemoval = nil } }
+      )
+    ) {
+      Button("Cancel", role: .cancel) { providerPendingRemoval = nil }
+      Button("Remove", role: .destructive) {
+        if let id = providerPendingRemoval {
+          viewModel.removeProviderConfig(id)
+        }
+        providerPendingRemoval = nil
+      }
+    } message: {
+      Text(removalConfirmationMessage(for: providerPendingRemoval))
+    }
+  }
+
+  private func removalConfirmationMessage(for providerId: LLMProviderID?) -> String {
+    guard let providerId else { return "" }
+    let name = viewModel.providerDisplayName(providerId)
+    switch providerId {
+    case .gemini:
+      return
+        "This will delete your Gemini API key from Keychain and reset \(name)'s saved model selection. You'll need to re-enter the key to use this provider again."
+    case .local:
+      return
+        "This will clear your saved \(name) endpoint, model selection, and local API key. You can re-run setup any time."
+    case .openAICompatible:
+      return
+        "This will delete the saved API key from Keychain and clear \(name)'s endpoint and model. You can re-run setup any time."
+    case .chatGPT, .claude:
+      return
+        "This will clear the saved CLI tool preference for \(name). You can re-run setup any time."
+    case .dayflow:
+      return ""
     }
   }
 
@@ -325,6 +366,12 @@ struct SettingsProvidersTabView: View {
           } else {
             SettingsSecondaryButton(title: "Unset secondary") {
               viewModel.clearBackupProvider()
+            }
+          }
+
+          if viewModel.canRemoveProviderConfig(provider.id) {
+            SettingsSecondaryButton(title: "Remove configuration") {
+              providerPendingRemoval = provider.id
             }
           }
         }
