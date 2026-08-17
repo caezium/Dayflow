@@ -150,6 +150,13 @@ enum LLMProviderSetupPreferences {
     }
   }
 
+  static func clearComplete(
+    _ providerID: LLMProviderID,
+    in defaults: UserDefaults = .standard
+  ) {
+    defaults.removeObject(forKey: completionKey(for: providerID))
+  }
+
   private static func completionKey(for providerID: LLMProviderID) -> String {
     "\(providerID.rawValue)SetupComplete"
   }
