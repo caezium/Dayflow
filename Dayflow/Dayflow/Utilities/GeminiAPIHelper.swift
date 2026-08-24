@@ -65,7 +65,7 @@ final class GeminiAPIHelper {
     guard !cleanedAPIKey.isEmpty,
       let url = URL(
         string:
-          "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=\(cleanedAPIKey)"
+          "https://generativelanguage.googleapis.com/v1beta/models?pageSize=1"
       )
     else {
       throw APIError.invalidAPIKey
@@ -73,6 +73,7 @@ final class GeminiAPIHelper {
     let model = preference.primary
     var request = URLRequest(url: url)
     request.httpMethod = "GET"
+    request.setValue(cleanedAPIKey, forHTTPHeaderField: "x-goog-api-key")
     request.timeoutInterval = Self.timeout
 
     let context = LLMCallContext(
