@@ -42,7 +42,9 @@ struct FlowView: View {
           Task { await authManager.restoreStoredSession() }
         }
       } else {
-        FlowWaitlistView()
+        // Fork: the hosted web app needs a signed-in, beta-whitelisted account.
+        // Everyone else gets fully local sessions driven through the mirror.
+        FlowLocalSessionView()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
