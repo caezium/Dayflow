@@ -47,8 +47,12 @@ struct FlowView: View {
         ) {
           Task { await authManager.restoreStoredSession() }
         }
-      } else {
+      } else if authManager.flowEnabled {
         FlowEnterView { hasEnteredFlow = true }
+      } else {
+        // Fork: keep no-account sessions local while preserving the hosted
+        // entry screen for accounts that can use upstream's web app.
+        FlowLocalSessionView()
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
