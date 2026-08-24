@@ -253,7 +253,7 @@ final class ScreenTextOCR: @unchecked Sendable {
   private func recognizeWithGemini(path: String, key: String, model: String) async -> [String]? {
     guard let b64 = base64JPEG(path: path) else { return nil }
     let urlString =
-      "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent?key=\(key)"
+      "https://generativelanguage.googleapis.com/v1beta/models/\(model):generateContent"
     guard let url = URL(string: urlString) else { return nil }
 
     let body: [String: Any] = [
@@ -266,7 +266,8 @@ final class ScreenTextOCR: @unchecked Sendable {
         ]
       ]
     ]
-    guard let text = await postJSON(url: url, body: body) else { return nil }
+    guard let text = await postJSON(url: url, body: body, headers: ["x-goog-api-key": key])
+    else { return nil }
     // candidates[0].content.parts[*].text
     guard
       let candidates = text["candidates"] as? [[String: Any]],
@@ -308,13 +309,18 @@ final class ScreenTextOCR: @unchecked Sendable {
 
   /// `bypassProxy` should be true for local/self-hosted endpoints (Ollama/LM Studio)
   /// so they aren't routed through the system proxy; false for cloud (Gemini).
-  private func postJSON(url: URL, body: [String: Any], bypassProxy: Bool = false) async
+  private func postJSON(
+    url: URL, body: [String: Any], bypassProxy: Bool = false, headers: [String: String] = [:]
+  ) async
     -> [String: Any]?
   {
     guard let data = try? JSONSerialization.data(withJSONObject: body) else { return nil }
     var request = URLRequest(url: url)
     request.httpMethod = "POST"
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    for (name, value) in headers {
+      request.setValue(value, forHTTPHeaderField: name)
+    }
     request.httpBody = data
     request.timeoutInterval = 25
     let config = URLSessionConfiguration.ephemeral
