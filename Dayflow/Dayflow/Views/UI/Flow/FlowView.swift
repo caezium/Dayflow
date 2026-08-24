@@ -23,10 +23,12 @@ struct FlowView: View {
 
   var body: some View {
     ZStack {
-      if authManager.user == nil {
-        signedOutView
-      } else {
+      // Fork: the hosted web app needs a signed-in, beta-whitelisted account.
+      // Everyone else gets fully local sessions driven through the mirror.
+      if authManager.user != nil && authManager.flowEnabled {
         webContent
+      } else {
+        FlowLocalSessionView()
       }
       #if DEBUG
         FlowAgentLogPanel()

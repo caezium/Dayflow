@@ -102,10 +102,11 @@ struct SidebarView: View {
     }
   }
 
-  /// Flow is a whitelisted beta: the signed-in account must be flagged by the
-  /// backend (flow_enabled). Signed out or unflagged → no tab, in all builds.
+  /// Fork: Flow is always visible. Upstream gates the tab behind a backend
+  /// whitelist (flow_enabled on the signed-in account), but the fork runs
+  /// local sessions natively (FlowLocalSessionView) with no account at all.
   static func showsFlowTab(flowEnabled: Bool) -> Bool {
-    flowEnabled
+    true
   }
 
   var body: some View {
