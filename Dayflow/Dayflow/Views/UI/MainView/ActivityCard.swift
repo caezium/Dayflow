@@ -577,10 +577,14 @@ struct ActivityCard: View {
           .font(.custom("Figtree", size: 13).weight(.medium))
           .lineLimit(1)
       }
-      .foregroundColor(Color(red: 0.45, green: 0.45, blue: 0.45))
+      .foregroundColor(Color.dayflowAdaptive(
+        light: NSColor(red: 0.45, green: 0.45, blue: 0.45, alpha: 1),
+        dark: NSColor.white.withAlphaComponent(0.55)))
       .padding(.horizontal, 12)
       .padding(.vertical, 8)
-      .background(Color(red: 0.92, green: 0.92, blue: 0.92))
+      .background(Color.dayflowAdaptive(
+        light: NSColor(red: 0.92, green: 0.92, blue: 0.92, alpha: 1),
+        dark: NSColor.white.withAlphaComponent(0.08)))
       .cornerRadius(200)
     } else {
       // Retry button - orange pill matching the primary "Resume" button

@@ -12,6 +12,7 @@
 import SwiftUI
 
 struct ProcessingStatusPill: View {
+  @Environment(\.dayflowTheme) private var theme
   @ObservedObject private var processing = ProcessingControl.shared
   @State private var hovering = false
 
@@ -42,13 +43,26 @@ struct ProcessingStatusPill: View {
     .animation(.easeInOut(duration: 0.2), value: processing.isStopped)
   }
 
+  // Running: quiet neutral control chrome. Paused: amber, kept readable per theme.
   private var foreground: Color {
-    processing.isStopped ? Color(hex: "8A5A00") : Color(hex: "786655")
+    processing.isStopped
+      ? Color.dayflowAdaptive(
+        light: NSColor(red: 0.54, green: 0.35, blue: 0.0, alpha: 1),
+        dark: NSColor(red: 1.0, green: 0.8, blue: 0.45, alpha: 1))
+      : theme.controlText
   }
   private var fill: Color {
-    processing.isStopped ? Color(hex: "FFE9C2") : Color(hex: "F3EEE7")
+    processing.isStopped
+      ? Color.dayflowAdaptive(
+        light: NSColor(red: 1.0, green: 0.91, blue: 0.76, alpha: 1),
+        dark: NSColor(red: 0.35, green: 0.26, blue: 0.08, alpha: 1))
+      : theme.controlFill
   }
   private var border: Color {
-    processing.isStopped ? Color(hex: "F2C879") : Color(hex: "E7DED2")
+    processing.isStopped
+      ? Color.dayflowAdaptive(
+        light: NSColor(red: 0.95, green: 0.78, blue: 0.47, alpha: 1),
+        dark: NSColor(red: 0.55, green: 0.42, blue: 0.15, alpha: 1))
+      : theme.controlBorder
   }
 }

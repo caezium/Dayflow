@@ -14,11 +14,12 @@ import SwiftUI
 struct CardInsightSection: View {
   let insight: CardInsight
 
+  @Environment(\.dayflowTheme) private var theme
   @State private var expanded = false
   @State private var showRaw = false
 
-  private let labelColor = Color(red: 0.55, green: 0.55, blue: 0.55)
-  private let bodyColor = Color(red: 0.15, green: 0.15, blue: 0.15)
+  private var labelColor: Color { theme.textTertiary }
+  private var bodyColor: Color { theme.textPrimary }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -158,9 +159,10 @@ struct CardInsightSection: View {
 /// logged, and the response is what carries the model's actual output.
 private struct RawCallRow: View {
   let call: CardInsight.RawCall
+  @Environment(\.dayflowTheme) private var theme
   @State private var open = false
 
-  private let labelColor = Color(red: 0.55, green: 0.55, blue: 0.55)
+  private var labelColor: Color { theme.textTertiary }
 
   var body: some View {
     VStack(alignment: .leading, spacing: 4) {
@@ -173,7 +175,7 @@ private struct RawCallRow: View {
             .frame(width: 6, height: 6)
           Text(call.operation)
             .font(Font.custom("Figtree", size: 11).weight(.semibold).monospaced())
-            .foregroundColor(Color(red: 0.25, green: 0.25, blue: 0.25))
+            .foregroundColor(theme.textPrimary)
           Spacer(minLength: 6)
           if let ms = call.latencyMs {
             Text("\(ms) ms")
@@ -193,7 +195,9 @@ private struct RawCallRow: View {
         {
           Text(errorMessage)
             .font(Font.custom("Figtree", size: 11))
-            .foregroundColor(Color(red: 0.72, green: 0.22, blue: 0.18))
+            .foregroundColor(Color.dayflowAdaptive(
+              light: NSColor(red: 0.72, green: 0.22, blue: 0.18, alpha: 1),
+              dark: NSColor(red: 1.0, green: 0.45, blue: 0.4, alpha: 1)))
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
         }
@@ -202,13 +206,13 @@ private struct RawCallRow: View {
           ScrollView {
             Text(body)
               .font(.system(size: 10.5, design: .monospaced))
-              .foregroundColor(Color(red: 0.2, green: 0.2, blue: 0.2))
+              .foregroundColor(theme.textPrimary)
               .frame(maxWidth: .infinity, alignment: .leading)
               .textSelection(.enabled)
               .padding(8)
           }
           .frame(maxHeight: 220)
-          .background(Color.black.opacity(0.035))
+          .background(theme.chatCodeFill)
           .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         }
       }
@@ -236,7 +240,9 @@ private struct ObservationThumbnail: View {
   var body: some View {
     ZStack {
       RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .fill(Color.black.opacity(0.05))
+        .fill(Color.dayflowAdaptive(
+          light: NSColor.black.withAlphaComponent(0.05),
+          dark: NSColor.white.withAlphaComponent(0.08)))
       if let image {
         Image(nsImage: image)
           .resizable()
@@ -247,7 +253,9 @@ private struct ObservationThumbnail: View {
     .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
     .overlay(
       RoundedRectangle(cornerRadius: 4, style: .continuous)
-        .strokeBorder(Color.black.opacity(0.08), lineWidth: 0.5)
+        .strokeBorder(Color.dayflowAdaptive(
+          light: NSColor.black.withAlphaComponent(0.08),
+          dark: NSColor.white.withAlphaComponent(0.12)), lineWidth: 0.5)
     )
     .task(id: path) {
       let p = path

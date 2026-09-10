@@ -237,5 +237,6 @@ private func menuLabel(_ text: String) -> some View {
   }
   .foregroundColor(SettingsStyle.ink)
   .padding(.horizontal, 12).padding(.vertical, 7)
-  .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.black.opacity(0.05)))
+  .background(
+    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(SettingsStyle.subtleFill))
 }

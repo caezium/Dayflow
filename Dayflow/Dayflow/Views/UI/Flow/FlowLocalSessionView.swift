@@ -21,7 +21,8 @@ struct FlowLocalSessionView: View {
   @State private var alertStyle: FlowAlertStyle = .friendly
 
   private static let durationChoices = [15, 25, 50, 90]
-  private static let accent = Color(hex: "F96E00")
+  @Environment(\.dayflowTheme) private var theme
+  private var accent: Color { theme.accent }
 
   var body: some View {
     Group {
@@ -46,13 +47,13 @@ struct FlowLocalSessionView: View {
     VStack(spacing: 20) {
       Image(systemName: "water.waves")
         .font(.system(size: 40))
-        .foregroundColor(Self.accent)
+        .foregroundColor(accent)
       Text("Start a flow session")
         .font(.custom("Figtree", size: 20).weight(.semibold))
-        .foregroundColor(.black)
+        .foregroundColor(theme.textPrimary)
       Text("Runs locally — no account needed. The distraction agent watches through your own codex CLI.")
         .font(.custom("Figtree", size: 13))
-        .foregroundColor(.black.opacity(0.6))
+        .foregroundColor(theme.textSecondary)
         .multilineTextAlignment(.center)
         .frame(maxWidth: 380)
 
@@ -60,7 +61,7 @@ struct FlowLocalSessionView: View {
         VStack(alignment: .leading, spacing: 6) {
           Text("What are you working on?")
             .font(.custom("Figtree", size: 13).weight(.medium))
-            .foregroundColor(.black.opacity(0.8))
+            .foregroundColor(theme.textPrimary.opacity(0.9))
           TextField("One goal per line", text: $goalText, axis: .vertical)
             .textFieldStyle(.roundedBorder)
             .lineLimit(1...4)
@@ -69,7 +70,7 @@ struct FlowLocalSessionView: View {
         VStack(alignment: .leading, spacing: 6) {
           Text("Length")
             .font(.custom("Figtree", size: 13).weight(.medium))
-            .foregroundColor(.black.opacity(0.8))
+            .foregroundColor(theme.textPrimary.opacity(0.9))
           Picker("Length", selection: $durationMinutes) {
             ForEach(Self.durationChoices, id: \.self) { minutes in
               Text("\(minutes) min").tag(minutes)
@@ -85,7 +86,7 @@ struct FlowLocalSessionView: View {
         VStack(alignment: .leading, spacing: 6) {
           Text("Nudge style")
             .font(.custom("Figtree", size: 13).weight(.medium))
-            .foregroundColor(.black.opacity(0.8))
+            .foregroundColor(theme.textPrimary.opacity(0.9))
           Picker("Nudge style", selection: $alertStyle) {
             ForEach(FlowAlertStyle.allCases, id: \.self) { style in
               Text(style.rawValue.capitalized).tag(style)
@@ -99,7 +100,7 @@ struct FlowLocalSessionView: View {
 
       Button("Start session") { startSession() }
         .buttonStyle(.borderedProminent)
-        .tint(Self.accent)
+        .tint(accent)
         .keyboardShortcut(.defaultAction)
     }
   }
@@ -110,7 +111,7 @@ struct FlowLocalSessionView: View {
     VStack(spacing: 20) {
       Image(systemName: "water.waves")
         .font(.system(size: 40))
-        .foregroundColor(Self.accent)
+        .foregroundColor(accent)
         .symbolEffect(.variableColor.iterative, options: .repeating)
 
       countdown
@@ -120,7 +121,7 @@ struct FlowLocalSessionView: View {
           ForEach(goals, id: \.self) { goal in
             Text(goal)
               .font(.custom("Figtree", size: 14))
-              .foregroundColor(.black.opacity(0.7))
+              .foregroundColor(theme.textSecondary)
           }
         }
       }
@@ -128,7 +129,7 @@ struct FlowLocalSessionView: View {
       if mirror.isDistracted {
         Text("Looks like you might be off track…")
           .font(.custom("Figtree", size: 13))
-          .foregroundColor(Self.accent)
+          .foregroundColor(accent)
       }
 
       HStack(spacing: 12) {
@@ -147,12 +148,12 @@ struct FlowLocalSessionView: View {
         let elapsed = elapsedText(now: context.date)
         Text("In flow · \(elapsed)")
           .font(.custom("Figtree", size: 24).weight(.semibold))
-          .foregroundColor(.black)
+          .foregroundColor(theme.textPrimary)
           .monospacedDigit()
       } else {
         Text(remainingText(now: context.date))
           .font(.custom("Figtree", size: 36).weight(.semibold))
-          .foregroundColor(.black)
+          .foregroundColor(theme.textPrimary)
           .monospacedDigit()
       }
     }
@@ -164,17 +165,17 @@ struct FlowLocalSessionView: View {
     VStack(spacing: 20) {
       Image(systemName: "cup.and.saucer")
         .font(.system(size: 40))
-        .foregroundColor(Self.accent)
+        .foregroundColor(accent)
       TimelineView(.periodic(from: .now, by: 1)) { context in
         Text("On a break · \(breakRemainingText(now: context.date))")
           .font(.custom("Figtree", size: 20).weight(.semibold))
-          .foregroundColor(.black)
+          .foregroundColor(theme.textPrimary)
           .monospacedDigit()
       }
       HStack(spacing: 12) {
         Button("Back to work") { resumeFromBreak() }
           .buttonStyle(.borderedProminent)
-          .tint(Self.accent)
+          .tint(accent)
         Button("End session") { endSession() }
           .buttonStyle(.bordered)
           .tint(.red)
@@ -188,18 +189,18 @@ struct FlowLocalSessionView: View {
     VStack(spacing: 20) {
       Image(systemName: "checkmark.circle")
         .font(.system(size: 40))
-        .foregroundColor(Self.accent)
+        .foregroundColor(accent)
       Text("Session complete")
         .font(.custom("Figtree", size: 20).weight(.semibold))
-        .foregroundColor(.black)
+        .foregroundColor(theme.textPrimary)
       if let startedAt = mirror.snapshot.sessionStartedAt {
         Text("You were in flow for \(sessionLengthText(startedAt: startedAt)).")
           .font(.custom("Figtree", size: 14))
-          .foregroundColor(.black.opacity(0.6))
+          .foregroundColor(theme.textSecondary)
       }
       Button("Start another") { endSession() }
         .buttonStyle(.borderedProminent)
-        .tint(Self.accent)
+        .tint(accent)
     }
   }
 

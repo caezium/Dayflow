@@ -10,6 +10,7 @@
 import SwiftUI
 
 struct ActivityWatchLaunchPill: View {
+  @Environment(\.dayflowTheme) private var theme
   @ObservedObject private var launcher = ActivityWatchLauncher.shared
   @State private var hovering = false
 
@@ -36,14 +37,14 @@ struct ActivityWatchLaunchPill: View {
               .lineLimit(1)
               .fixedSize()
           }
-          .foregroundColor(Color(hex: "786655"))
+          .foregroundColor(theme.controlText)
           .padding(.horizontal, 12)
           .frame(height: 32)
           .background(
-            Capsule().fill(Color(hex: "FFF3E8").opacity(hovering ? 1 : 0.85))
+            Capsule().fill(theme.controlFill.opacity(hovering ? 1 : 0.85))
           )
           .overlay(
-            Capsule().strokeBorder(Color(hex: "FFE1C9"), lineWidth: 1.25)
+            Capsule().strokeBorder(theme.controlBorder, lineWidth: 1.25)
           )
         }
         .buttonStyle(.plain)
