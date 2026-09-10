@@ -4,15 +4,15 @@
 //
 //  Accurate, local ground-truth foreground usage (macOS Screen Time +
 //  ActivityWatch) for the current day. Mirrors the Daily/Weekly visual language:
-//  a donut summary + white cards, Figtree/InstrumentSerif fonts, soft warm
-//  shadows, and explicit dark text (Dayflow paints a fixed light background, so
-//  adaptive .primary/.secondary would render invisible under system dark mode).
+//  a donut summary + summary-style cards, Figtree/InstrumentSerif fonts, all
+//  colors from DayflowTheme so the view follows the selected appearance.
 //
 
 import AppKit
 import SwiftUI
 
 struct UsageView: View {
+  @Environment(\.dayflowTheme) private var theme
   @State private var screenTimeApps: [UsageEntry] = []
   @State private var screenTimeWeb: [UsageEntry] = []
   @State private var activityWatchApps: [UsageEntry] = []
@@ -24,9 +24,9 @@ struct UsageView: View {
   private static let palette = [
     "#6A7EFF", "#56CFEE", "#C787F7", "#FFAE8C", "#FF5950", "#6AADFF", "#88E5DF", "#B984FF",
   ]
-  private let barColor = Color(red: 0.976, green: 0.431, blue: 0.0)  // Dayflow orange
-  private let titleColor = Color(red: 0.2, green: 0.2, blue: 0.2)  // #333333
-  private let subtitleColor = Color(red: 0.44, green: 0.44, blue: 0.44)  // #707070
+  private var barColor: Color { theme.accent }
+  private var titleColor: Color { theme.textPrimary }
+  private var subtitleColor: Color { theme.textSecondary }
 
   var body: some View {
     ScrollView {
@@ -88,14 +88,14 @@ struct UsageView: View {
   private func sourceBadge(_ name: String, on: Bool) -> some View {
     HStack(spacing: 5) {
       Circle()
-        .fill(on ? Color(red: 0.25, green: 0.62, blue: 0.32) : Color.black.opacity(0.25))
+        .fill(on ? Color(red: 0.25, green: 0.62, blue: 0.32) : theme.textMuted)
         .frame(width: 7, height: 7)
       Text(name).font(.custom("Figtree", size: 11).weight(.medium)).foregroundColor(titleColor)
     }
     .padding(.horizontal, 9)
     .padding(.vertical, 5)
-    .background(Color.white.opacity(0.7), in: Capsule())
-    .overlay(Capsule().strokeBorder(Color.black.opacity(0.06), lineWidth: 1))
+    .background(theme.chipFill, in: Capsule())
+    .overlay(Capsule().strokeBorder(theme.chipBorder, lineWidth: 1))
     .help(on ? "\(name) is providing data" : "\(name) is not available")
   }
 
@@ -207,9 +207,13 @@ struct UsageView: View {
     content()
       .padding(18)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.white)
-      .cornerRadius(16)
-      .shadow(color: Color(red: 0.39, green: 0.28, blue: 0.22).opacity(0.10), radius: 8, x: 0, y: 2)
+      .background(theme.summaryCardFill)
+      .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          .strokeBorder(theme.summaryCardBorder, lineWidth: 1)
+      )
+      .shadow(color: theme.summaryCardShadow, radius: 8, x: 0, y: 2)
   }
 
   // MARK: - Load
