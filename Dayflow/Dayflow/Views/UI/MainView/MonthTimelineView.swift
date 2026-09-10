@@ -250,7 +250,9 @@ struct MonthTimelineView: View {
     }) {
       return Color(hex: match.colorHex.replacingOccurrences(of: "#", with: ""))
     }
-    return Color(hex: "D8D3CC")
+    return Color.dayflowAdaptive(
+      light: NSColor(red: 0.847, green: 0.827, blue: 0.8, alpha: 1),
+      dark: NSColor.white.withAlphaComponent(0.25))
   }
 }
 
@@ -271,11 +273,29 @@ private func isTimelineToday(_ dayString: String) -> Bool {
 // MARK: - Shared helpers for the new drafts
 
 private enum MonthDraft {
-  static let label = Color(hex: "796E64")
-  static let strong = Color(hex: "3A3530")
+  static let label = Color.dayflowAdaptive(
+    light: NSColor(red: 0.475, green: 0.431, blue: 0.392, alpha: 1),
+    dark: NSColor.white.withAlphaComponent(0.55))
+  static let strong = Color.dayflowAdaptive(
+    light: NSColor(red: 0.227, green: 0.208, blue: 0.188, alpha: 1),
+    dark: NSColor.white.withAlphaComponent(0.92))
   static let accent = Color(hex: "FF7A2F")
   static let today = Color(hex: "FF7506")
-  static let faintFill = Color.black.opacity(0.05)
+  static let faintFill = Color.dayflowAdaptive(
+    light: NSColor.black.withAlphaComponent(0.05),
+    dark: NSColor.white.withAlphaComponent(0.09))
+  static let cellFill = Color.dayflowAdaptive(
+    light: NSColor.white.withAlphaComponent(0.7),
+    dark: NSColor.white.withAlphaComponent(0.05))
+  static let cellFillOut = Color.dayflowAdaptive(
+    light: NSColor.black.withAlphaComponent(0.012),
+    dark: NSColor.white.withAlphaComponent(0.015))
+  static let cellBorder = Color.dayflowAdaptive(
+    light: NSColor.black.withAlphaComponent(0.05),
+    dark: NSColor.white.withAlphaComponent(0.08))
+  static let cellBorderOut = Color.dayflowAdaptive(
+    light: NSColor.black.withAlphaComponent(0.02),
+    dark: NSColor.white.withAlphaComponent(0.03))
 
   static func font(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
     .custom("Figtree", size: size).weight(weight)
@@ -311,6 +331,7 @@ private enum MonthDraft {
 // MARK: - Draft: Overview (calendar of ribbons/dials + agenda list, linked)
 
 private struct MonthOverviewComboDraft: View {
+  @Environment(\.dayflowTheme) private var theme
   let monthRange: TimelineMonthRange
   let summaries: [String: MonthDaySummary]
   let colorForCategory: (String) -> Color
@@ -372,7 +393,7 @@ private struct MonthOverviewComboDraft: View {
         // Bottom fade hints that the list scrolls.
         .overlay(alignment: .bottom) {
           LinearGradient(
-            colors: [Color(hex: "FBF4EA").opacity(0), Color(hex: "FBF4EA").opacity(0.92)],
+            colors: [theme.panelSolid.opacity(0), theme.panelSolid.opacity(0.92)],
             startPoint: .top, endPoint: .bottom
           )
           .frame(height: 22)
@@ -414,12 +435,14 @@ private struct MonthOverviewComboDraft: View {
       .frame(height: 76)
       .background(
         RoundedRectangle(cornerRadius: 10, style: .continuous)
-          .fill(day.isInMonth ? Color.white.opacity(0.7) : Color.black.opacity(0.012))
+          .fill(day.isInMonth ? MonthDraft.cellFill : MonthDraft.cellFillOut)
           .overlay(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
               .strokeBorder(
                 selected ? MonthDraft.accent
-                  : (today ? MonthDraft.today.opacity(0.6) : Color.black.opacity(day.isInMonth ? 0.05 : 0.02)),
+                  : (today
+                    ? MonthDraft.today.opacity(0.6)
+                    : (day.isInMonth ? MonthDraft.cellBorder : MonthDraft.cellBorderOut)),
                 lineWidth: selected ? 2 : (today ? 1.5 : 1)))
       )
       .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -439,7 +462,7 @@ private struct MonthOverviewComboDraft: View {
       // Faint full-day track.
       context.stroke(
         Path(ellipseIn: CGRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2)),
-        with: .color(Color.black.opacity(0.05)), lineWidth: sw)
+        with: .color(MonthDraft.faintFill), lineWidth: sw)
       // Colored hour arcs, midnight at top, small gaps between hours.
       for hour in 0..<24 {
         let entry = hourly[hour]

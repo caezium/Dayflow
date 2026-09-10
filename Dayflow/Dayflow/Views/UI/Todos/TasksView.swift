@@ -3,21 +3,22 @@
 //  Dayflow
 //
 //  A daily task list. Unfinished tasks roll forward to today automatically; the
-//  end-of-day AI pass can mark items done (shown with an "auto" badge). Uses
-//  explicit dark colors (Dayflow paints a fixed light background).
+//  end-of-day AI pass can mark items done (shown with an "auto" badge). All
+//  colors come from DayflowTheme so the view follows the selected appearance.
 //
 
 import SwiftUI
 
 struct TasksView: View {
+  @Environment(\.dayflowTheme) private var theme
   @ObservedObject private var store = TodoStore.shared
   @State private var newTitle = ""
   @State private var isDetecting = false
   @FocusState private var addFocused: Bool
 
-  private let titleColor = Color(red: 0.2, green: 0.2, blue: 0.2)  // #333333
-  private let subtitleColor = Color(red: 0.44, green: 0.44, blue: 0.44)  // #707070
-  private let accent = Color(red: 0.976, green: 0.431, blue: 0.0)  // Dayflow orange
+  private var titleColor: Color { theme.textPrimary }
+  private var subtitleColor: Color { theme.textSecondary }
+  private var accent: Color { theme.accent }
 
   private var today: String { TodoStore.todayString }
   private var todays: [TodoItem] { store.todos(for: today) }
@@ -39,7 +40,7 @@ struct TasksView: View {
               ForEach(todays) { item in
                 taskRow(item)
                 if item.id != todays.last?.id {
-                  Divider().background(Color.black.opacity(0.06))
+                  Divider().background(theme.rightPanelDivider)
                 }
               }
             }
@@ -81,8 +82,8 @@ struct TasksView: View {
           }
           .foregroundColor(titleColor)
           .padding(.horizontal, 11).frame(height: 30)
-          .background(Color.white, in: Capsule())
-          .overlay(Capsule().strokeBorder(Color.black.opacity(0.1)))
+          .background(theme.secondaryButtonFill, in: Capsule())
+          .overlay(Capsule().strokeBorder(theme.secondaryButtonBorder))
         }
         .buttonStyle(.plain)
         .disabled(isDetecting)
@@ -125,9 +126,9 @@ struct TasksView: View {
         .focused($addFocused)
         .onSubmit(addTask)
         .padding(.horizontal, 14).padding(.vertical, 11)
-        .background(Color.white)
+        .background(theme.inputFill)
         .cornerRadius(12)
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.black.opacity(0.08)))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.inputBorder))
       Button(action: addTask) {
         Image(systemName: "plus")
           .font(.system(size: 14, weight: .bold))
@@ -155,7 +156,7 @@ struct TasksView: View {
       Button(action: { store.toggle(item.id) }) {
         Image(systemName: item.isDone ? "checkmark.circle.fill" : "circle")
           .font(.system(size: 18))
-          .foregroundColor(item.isDone ? accent : Color.black.opacity(0.3))
+          .foregroundColor(item.isDone ? accent : theme.textMuted)
       }
       .buttonStyle(.plain)
       .pointingHandCursor()
@@ -184,7 +185,7 @@ struct TasksView: View {
           .font(.system(size: 10, weight: .bold))
           .foregroundColor(subtitleColor)
           .frame(width: 22, height: 22)
-          .background(Color.black.opacity(0.05), in: Circle())
+          .background(theme.chipFill, in: Circle())
       }
       .buttonStyle(.plain)
       .pointingHandCursor()
@@ -200,7 +201,7 @@ struct TasksView: View {
     }
     .foregroundColor(subtitleColor)
     .padding(.horizontal, 6).padding(.vertical, 2)
-    .background(Color.black.opacity(0.04), in: Capsule())
+    .background(theme.chipFill, in: Capsule())
   }
 
   // MARK: - Card chrome
@@ -209,8 +210,12 @@ struct TasksView: View {
     content()
       .padding(16)
       .frame(maxWidth: .infinity, alignment: .leading)
-      .background(Color.white)
-      .cornerRadius(16)
-      .shadow(color: Color(red: 0.39, green: 0.28, blue: 0.22).opacity(0.10), radius: 8, x: 0, y: 2)
+      .background(theme.summaryCardFill)
+      .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+      .overlay(
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+          .strokeBorder(theme.summaryCardBorder, lineWidth: 1)
+      )
+      .shadow(color: theme.summaryCardShadow, radius: 8, x: 0, y: 2)
   }
 }
