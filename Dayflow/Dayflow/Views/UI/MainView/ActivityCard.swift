@@ -429,7 +429,7 @@ struct ActivityCard: View {
     return VStack(alignment: .leading, spacing: 6) {
       Text("MEASURED USAGE")
         .font(Font.custom("Figtree", size: 12).weight(.semibold))
-        .foregroundColor(Color(red: 0.55, green: 0.55, blue: 0.55))
+        .foregroundColor(theme.textTertiary)
 
       ForEach(Array(apps)) { entry in
         measuredUsageRow(name: entry.displayName, seconds: entry.seconds)
@@ -444,16 +444,16 @@ struct ActivityCard: View {
     HStack(spacing: 8) {
       Image(systemName: isWeb ? "globe" : "app.dashed")
         .font(.system(size: 10, weight: .medium))
-        .foregroundColor(Color(red: 0.55, green: 0.55, blue: 0.55))
+        .foregroundColor(theme.textTertiary)
         .frame(width: 14)
       Text(name)
         .font(Font.custom("Figtree", size: 12))
-        .foregroundColor(.black)
+        .foregroundColor(theme.textPrimary)
         .lineLimit(1)
       Spacer(minLength: 6)
       Text(Self.compactUsageDuration(seconds))
         .font(Font.custom("Figtree", size: 12).weight(.medium).monospacedDigit())
-        .foregroundColor(Color(red: 0.4, green: 0.4, blue: 0.4))
+        .foregroundColor(theme.textSecondary)
     }
   }
 
