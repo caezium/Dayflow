@@ -17,6 +17,8 @@ struct SettingsRecordingPrivacyTabView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 28) {
+      idleCaptureSection
+
       SettingsSection(
         title: String(localized: "Recording privacy"),
         subtitle: String(
@@ -42,6 +44,22 @@ struct SettingsRecordingPrivacyTabView: View {
     }
     .onDisappear {
       permissions.stop()
+    }
+  }
+
+  private var idleCaptureSection: some View {
+    SettingsSection(
+      title: "Idle capture",
+      subtitle: "Reduce screenshot frequency while you're away from your computer."
+    ) {
+      SettingsRow(
+        label: "Slow down capture when idle",
+        subtitle:
+          "After 2 minutes without keyboard or mouse input, Dayflow takes screenshots less often to save disk space and battery.",
+        showsDivider: false
+      ) {
+        SettingsToggle(isOn: $viewModel.idleCaptureThrottleEnabled)
+      }
     }
   }
 
