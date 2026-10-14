@@ -251,8 +251,8 @@ extension StorageManager {
         breadcrumb.data = ["filename": backupName]
         SentryHelper.addBreadcrumb(breadcrumb)
 
-        // Prune old backups, keeping last 3
-        self.pruneOldBackups(keeping: 3)
+        // Prune old backups, keeping last 2
+        self.pruneOldBackups(keeping: 2)
 
       } catch {
         print("❌ [StorageManager] Backup failed: \(error)")
