@@ -68,6 +68,15 @@ enum TimelineActivityLoader {
     return buildActivities(from: displayableCards(cards, storageManager: storageManager))
   }
 
+  /// Fork (month view): arbitrary date-range variant of the week loader.
+  static func activities(
+    from start: Date, to end: Date,
+    storageManager: StorageManaging = StorageManager.shared
+  ) -> [TimelineActivity] {
+    let cards = storageManager.fetchTimelineCardsByTimeRange(from: start, to: end)
+    return buildActivities(from: displayableCards(cards, storageManager: storageManager))
+  }
+
   static func shouldDisplay(_ card: TimelineCard, storageManager: StorageManaging) -> Bool {
     guard card.title == "Processing failed" else { return true }
     return isRetryableFailedCard(card, storageManager: storageManager)
