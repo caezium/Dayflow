@@ -50,7 +50,10 @@ final class FlowEarlyBirdController {
   }
 
   private func evaluate() {
-    guard DayflowAuthManager.shared.flowEnabled, AppState.shared.isRecording else {
+    // Fork: upstream gates the card behind the hosted Flow whitelist
+    // (flowEnabled). Local Flow sessions are always available here, so the
+    // card only needs recording to be on.
+    guard AppState.shared.isRecording else {
       hide()
       return
     }
