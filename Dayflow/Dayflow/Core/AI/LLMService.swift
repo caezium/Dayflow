@@ -821,6 +821,9 @@ final class LLMService: LLMServicing {
         // in a single call. If it fails, the batch falls through to transcribe-then-generate
         // below, which keeps its own backup-provider handling.
         var oneStepCards: [ActivityCardData]?
+        // Raw card-generation output for CardInsight reasoning extraction,
+        // from whichever path produced the cards.
+        var cardGenLogOutput: String?
         if !usedProviderBackup, let generateTimeline = activeContext.actions.generateTimeline {
           lastProcessingStep = .generatingCards
           await MainActor.run {
@@ -839,6 +842,7 @@ final class LLMService: LLMServicing {
             observations = result.observations
             StorageManager.shared.saveObservations(batchId: batchId, observations: observations)
             oneStepCards = result.cards
+            cardGenLogOutput = result.log.output
             print(
               "🧩 [LLMService] One-step timeline → \(result.cards.count) cards, "
                 + "\(observations.count) observations")
@@ -981,6 +985,7 @@ final class LLMService: LLMServicing {
               recentObservations, context, batchId)
           }
           cards = cardsResult.value.cards
+          cardGenLogOutput = cardsResult.value.log.output
           activeContext = cardsResult.activeContext
           usedProviderBackup = usedProviderBackup || cardsResult.usedProviderBackup
         }
@@ -1011,7 +1016,7 @@ final class LLMService: LLMServicing {
         // Persist the model's card-generation reasoning so the timeline can show
         // "how Dayflow figured this out" without re-parsing logs (which may be pruned).
         let cardReasoning = CardInsight.extractReasoning(
-          fromModelResponse: cardsResult.value.log.output)
+          fromModelResponse: cardGenLogOutput)
 
         // Replace old cards with new ones in the time range
         let replacementStartTime = Self.cardReplacementStartTime(
