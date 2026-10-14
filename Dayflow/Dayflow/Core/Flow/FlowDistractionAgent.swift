@@ -67,25 +67,36 @@ final class FlowDistractionAgent: ObservableObject {
     case codex
     case claude
     case dayflow
+    /// Fork: the user's own OpenAI-compatible endpoint (Ollama, LM Studio,
+    /// OpenRouter, …) run the same stateless way as Dayflow Pro, so Flow's
+    /// screen watching works without a CLI and without their backend.
+    case openAICompatible
 
     static func current() -> Engine? {
       switch (try? LLMProviderRoutingStore.load())?.primary {
       case .chatGPT: return .codex
       case .claude: return .claude
       case .dayflow: return .dayflow
+      case .openAICompatible: return .openAICompatible
       default: return nil
       }
     }
 
     /// Codex and Claude keep the session timeline as a file they edit in
-    /// place; Dayflow Pro has no file system, so it answers inline.
-    var editsTimelineFile: Bool { self != .dayflow }
+    /// place; the stateless engines have no file system, so they answer inline.
+    var editsTimelineFile: Bool {
+      switch self {
+      case .codex, .claude: return true
+      case .dayflow, .openAICompatible: return false
+      }
+    }
 
     var label: String {
       switch self {
       case .codex: return "Codex"
       case .claude: return "Claude"
       case .dayflow: return "Dayflow Pro"
+      case .openAICompatible: return "Local API"
       }
     }
   }
@@ -249,8 +260,8 @@ final class FlowDistractionAgent: ObservableObject {
     guard let engine = Engine.current() else {
       print("[FlowAgent] Not starting: the primary provider can't run the Flow agent")
       appendTranscript(
-        "Flow's screen watching needs ChatGPT (Codex), Claude or Dayflow Pro as your provider.")
-      statusLine = "Needs Codex, Claude or Dayflow Pro"
+        "Flow's screen watching needs ChatGPT (Codex), Claude, Dayflow Pro or an OpenAI-compatible provider as your primary provider.")
+      statusLine = "Needs Codex, Claude, Dayflow Pro or a local API"
       AnalyticsService.shared.capture("flow_agent_unsupported_provider")
       return
     }
@@ -278,6 +289,23 @@ final class FlowDistractionAgent: ObservableObject {
         appendTranscript("Couldn't start the agent: not signed in to Dayflow Pro.")
         statusLine = "Sign in to Dayflow Pro"
         AnalyticsService.shared.capture("flow_agent_start_failed", ["engine": "dayflow"])
+        cleanupWorkDirectory()
+        return
+      }
+      backendBriefing = prompt
+      backendHistory = []
+      finishStart(generation: gen, sessionId: UUID().uuidString, reply: "", error: nil)
+      return
+    }
+
+    // Fork: an OpenAI-compatible endpoint is stateless the same way — the
+    // briefing rides along with every tick.
+    if engine == .openAICompatible {
+      guard let config = OpenAICompatiblePreferences.load(), config.isComplete else {
+        appendTranscript(
+          "Couldn't start the agent: the OpenAI-compatible provider needs a base URL and model in Settings > Providers.")
+        statusLine = "Configure your API provider"
+        AnalyticsService.shared.capture("flow_agent_start_failed", ["engine": "openai_compatible"])
         cleanupWorkDirectory()
         return
       }
@@ -596,6 +624,11 @@ final class FlowDistractionAgent: ObservableObject {
               briefing: briefing, history: history, message: prompt, image_base64: image,
               want_timeline: askTimeline),
             timeout: timeout)
+        case .openAICompatible:
+          let image = try Data(contentsOf: shotURL).base64EncodedString()
+          replyText = try await Self.openAICompatibleCheck(
+            briefing: briefing, history: history, message: prompt, imageBase64: image,
+            timeout: timeout)
         }
       } catch {
         errorText = error.localizedDescription
@@ -674,7 +707,7 @@ final class FlowDistractionAgent: ObservableObject {
     }
     consecutiveFailures = 0
     appendTranscript(reply)
-    if engine == .dayflow {
+    if !engine.editsTimelineFile {
       backendHistory.append(BackendTurn(role: "user", content: prompt))
       backendHistory.append(BackendTurn(role: "assistant", content: reply))
       let limit = Self.dayflowHistoryTurns * 2
@@ -1104,6 +1137,8 @@ final class FlowDistractionAgent: ObservableObject {
     case .codex: return "\(settings.model), \(settings.reasoningEffort)"
     case .claude: return "Claude \(Self.claudeModel)"
     case .dayflow: return "Dayflow Pro"
+    case .openAICompatible:
+      return OpenAICompatiblePreferences.load()?.modelID ?? "Local API"
     }
   }
 
@@ -1112,6 +1147,7 @@ final class FlowDistractionAgent: ObservableObject {
     case .codex: return "codex"
     case .claude: return "claude"
     case .dayflow: return "dayflow"
+    case .openAICompatible: return "openai_compatible"
     }
   }
 
@@ -1167,6 +1203,77 @@ final class FlowDistractionAgent: ObservableObject {
         ])
     }
     return try JSONDecoder().decode(BackendCheckResponse.self, from: data).text
+  }
+
+  /// Fork: one stateless check against the user's own OpenAI-compatible
+  /// endpoint (Ollama, LM Studio, OpenRouter, …). Same shape as the Dayflow
+  /// Pro tick — briefing + recent turns + this tick's message and screenshot
+  /// in, the model's raw reply out — but nothing touches Dayflow's backend.
+  private nonisolated static func openAICompatibleCheck(
+    briefing: String, history: [BackendTurn], message: String, imageBase64: String?,
+    timeout: TimeInterval
+  ) async throws -> String {
+    guard let config = OpenAICompatiblePreferences.load(), config.isComplete,
+      let url = config.chatCompletionsURL
+    else {
+      throw NSError(
+        domain: "FlowAgent", code: -3,
+        userInfo: [
+          NSLocalizedDescriptionKey: "The OpenAI-compatible provider isn't fully configured"
+        ])
+    }
+
+    var messages: [[String: Any]] = [["role": "system", "content": briefing]]
+    for turn in history {
+      messages.append(["role": turn.role, "content": turn.content])
+    }
+    var userContent: [[String: Any]] = [["type": "text", "text": message]]
+    if let imageBase64 {
+      userContent.append([
+        "type": "image_url",
+        "image_url": ["url": "data:image/jpeg;base64,\(imageBase64)"],
+      ])
+    }
+    messages.append(["role": "user", "content": userContent])
+
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.timeoutInterval = timeout
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    request.setValue("application/json", forHTTPHeaderField: "Accept")
+    if let key = KeychainManager.shared.retrieve(for: OpenAICompatiblePreferences.keychainProvider),
+      !key.isEmpty
+    {
+      request.setValue("Bearer \(key)", forHTTPHeaderField: "Authorization")
+    }
+    request.httpBody = try JSONSerialization.data(
+      withJSONObject: ["model": config.modelID, "messages": messages])
+
+    let (data, response) = try await URLSession.shared.data(for: request)
+    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+    guard (200...299).contains(status) else {
+      let body = String(data: data, encoding: .utf8) ?? ""
+      throw NSError(
+        domain: "FlowAgent", code: status,
+        userInfo: [
+          NSLocalizedDescriptionKey: "Local API check failed (\(status)): \(body.prefix(200))"
+        ])
+    }
+    struct Reply: Decodable {
+      struct Choice: Decodable {
+        struct Message: Decodable { let content: String? }
+        let message: Message
+      }
+      let choices: [Choice]
+    }
+    guard let text = try JSONDecoder().decode(Reply.self, from: data).choices.first?.message.content,
+      !text.isEmpty
+    else {
+      throw NSError(
+        domain: "FlowAgent", code: -4,
+        userInfo: [NSLocalizedDescriptionKey: "Local API returned no reply text"])
+    }
+    return text
   }
 
   private static func formatMinutes(_ minutes: Int) -> String {
