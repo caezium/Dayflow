@@ -436,6 +436,7 @@ struct ActivityCard: View {
       localized:
         "This time couldn't be turned into cards yet. Dayflow will try again automatically. Your recording is saved."
     )
+  }
 
   private var measuredUsageSection: some View {
     let apps = measuredUsage.filter { $0.kind == .app }.prefix(5)
