@@ -177,6 +177,11 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
   private var displayRefreshPending = false
   private var captureInFlight = false
   private var captureFailureCount = 0
+  // Fork: timestamp of the last frame that actually landed, feeding the
+  // dark-wake staleness check, plus the interval the timer was scheduled at
+  // so idle throttling can tell when it needs to reschedule.
+  private var lastSuccessfulCaptureAt: Date?
+  private var currentCaptureInterval: TimeInterval = ScreenshotConfig.interval
   private var firstCaptureFailureAt: Date?
   private var lastCaptureFailureReason: String?
   private var setupRetryWorkItem: DispatchWorkItem?
@@ -419,10 +424,24 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
 
   // MARK: - Capture Timer
 
+  /// Fork (issue #286 port): capture cadence given how long the user has been
+  /// idle — throttled rather than paused so IdleBatchClassifier still gets the
+  /// screenshots it needs to emit Idle cards.
+  private func effectiveCaptureInterval() -> TimeInterval {
+    guard IdleCapturePreferences.enabled else { return ScreenshotConfig.interval }
+    return IdleCaptureInterval.interval(
+      baseInterval: ScreenshotConfig.interval,
+      idleThrottledInterval: IdleCaptureDefaults.throttledIntervalSeconds,
+      idleSeconds: InputIdleSnapshot.currentIdleSeconds(),
+      idleThresholdSeconds: IdleCaptureDefaults.idleThresholdSeconds
+    )
+  }
+
   private func startCaptureTimer() {
     stopCaptureTimer()
 
-    let interval = ScreenshotConfig.interval
+    let interval = effectiveCaptureInterval()
+    currentCaptureInterval = interval
     let timer = DispatchSource.makeTimerSource(queue: q)
     timer.schedule(deadline: .now() + interval, repeating: interval)
     timer.setEventHandler { [weak self] in
@@ -439,11 +458,26 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
     captureTimer = nil
   }
 
+  /// Fork: re-checks the idle-throttled target interval and reschedules the
+  /// capture timer if it changed. Called on every tick, since a fixed
+  /// DispatchSourceTimer can't self-adjust its repeat interval. The tick that
+  /// crosses the idle threshold still fires at the old cadence — a bounded,
+  /// self-correcting one-tick lag that's fine for a battery/disk optimization.
+  private func rescheduleCaptureTimerIfIntervalChanged() {
+    guard state == .capturing, let timer = captureTimer else { return }
+    let target = effectiveCaptureInterval()
+    guard target != currentCaptureInterval else { return }
+    dbg("capture interval \(currentCaptureInterval)s → \(target)s (idle throttle)")
+    currentCaptureInterval = target
+    timer.schedule(deadline: .now() + target, repeating: target)
+  }
+
   // MARK: - Capture Tick & Backoff
 
   /// Runs on `q`. Skips the tick while the previous capture is still waiting on
   /// ScreenCaptureKit, so requests can't pile up when macOS is slow to answer.
   private func captureTick() {
+    rescheduleCaptureTimerIfIntervalChanged()
     guard !captureInFlight else {
       dbg("capture tick skipped - previous capture still in flight")
       return
@@ -470,6 +504,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
       return
 
     case .succeeded:
+      lastSuccessfulCaptureAt = Date()
       guard captureFailureCount > 0 else { return }
       let downSeconds = firstCaptureFailureAt.map { Date().timeIntervalSince($0) } ?? 0
       AnalyticsService.shared.capture(
@@ -513,7 +548,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
 
     let delay = min(
       Self.backoffDelay(Self.captureBackoffDelays, failureCount: captureFailureCount), maxDelay)
-    captureTimer?.schedule(deadline: .now() + delay, repeating: ScreenshotConfig.interval)
+    captureTimer?.schedule(deadline: .now() + delay, repeating: currentCaptureInterval)
     dbg("capture failed (\(reason)) #\(captureFailureCount) – next attempt in \(delay)s")
 
     // One event per step while the delay is still growing, so a Mac that stays
@@ -697,7 +732,7 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
       lastCaptureFailureReason == "no_display",
       cachedDisplay != nil
     else { return }
-    captureTimer?.schedule(deadline: .now(), repeating: ScreenshotConfig.interval)
+    captureTimer?.schedule(deadline: .now(), repeating: currentCaptureInterval)
   }
 
   /// Only call through `runDisplayRefresh()`.
@@ -868,8 +903,13 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
 
       self.q.async { [weak self] in
         guard let self else { return }
-        guard self.state == .paused else { return }
-        self.resumeRecording(after: 5, context: "didWake")
+        if self.state == .paused {
+          self.resumeRecording(after: 5, context: "didWake")
+          return
+        }
+        // Fork: dark wake / missed willSleep — state still claims capturing
+        // while ScreenCaptureKit may be dead. Restart if captures look stale.
+        self.restartIfStaleAfterWake(context: "didWake")
       }
     }
 
@@ -909,8 +949,11 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
 
       self.q.async { [weak self] in
         guard let self else { return }
-        guard self.state == .paused else { return }
-        self.resumeRecording(after: 5, context: "screen unlock")
+        if self.state == .paused {
+          self.resumeRecording(after: 5, context: "screen unlock")
+          return
+        }
+        self.restartIfStaleAfterWake(context: "screen unlock")
       }
     }
 
@@ -959,6 +1002,34 @@ final class ScreenRecorder: NSObject, @unchecked Sendable {
   /// Waits a few seconds before resuming: right after wake/unlock macOS is busy,
   /// and ScreenCaptureKit requests then are the ones that trigger the spurious
   /// permission prompt (issue #381).
+  /// Fork: runs on `q`. Wake-time health check — a recorder that says it's
+  /// capturing but has no display or no recent successful frame gets a full
+  /// restart. staleAfter derives from the slowest legitimate cadence so an
+  /// idle-throttled recorder isn't false-flagged on every wake.
+  private func restartIfStaleAfterWake(context: String) {
+    guard wantsRecording else { return }
+    let slowestInterval =
+      IdleCapturePreferences.enabled
+      ? max(ScreenshotConfig.interval, IdleCaptureDefaults.throttledIntervalSeconds)
+      : ScreenshotConfig.interval
+    let staleAfter = max(slowestInterval * 3, 30)
+    guard
+      RecorderRecoveryPolicy.shouldRestartAfterWake(
+        isCapturing: state == .capturing,
+        hasDisplay: cachedDisplay != nil,
+        lastSuccessfulCaptureAt: lastSuccessfulCaptureAt,
+        now: Date(),
+        staleAfter: staleAfter
+      )
+    else {
+      dbg("\(context) – recorder is healthy")
+      return
+    }
+    dbg("\(context) – recorder looks stale, restarting capture")
+    stop()
+    resumeRecording(after: 5, context: "\(context) stale restart")
+  }
+
   private func resumeRecording(after delay: TimeInterval, context: String) {
     q.asyncAfter(deadline: .now() + delay) { [weak self] in
       guard let self else { return }
