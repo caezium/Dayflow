@@ -388,6 +388,7 @@ enum TimelineFailureClassifier {
       .modelFlaky,
       [
         "minutes long", "empty title", "last segment", "segment end time",
+        "returned no timeline cards",
         "segment out of bounds", "missing coverage", "gap detected", "do not cover all",
         "invalid duration",
       ]

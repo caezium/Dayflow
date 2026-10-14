@@ -865,7 +865,7 @@ final class LLMService: LLMServicing {
           }
         }
 
-        let cards: [ActivityCardData]
+        var cards: [ActivityCardData]
         if let oneStepCards {
           cards = oneStepCards
         } else {
@@ -984,6 +984,27 @@ final class LLMService: LLMServicing {
           activeContext = cardsResult.activeContext
           usedProviderBackup = usedProviderBackup || cardsResult.usedProviderBackup
         }
+        // Fork: validate the model's output before it replaces real cards. Cards
+        // that merely echo an old "Processing failed" placeholder are dropped
+        // (replaceTimelineCardsInRange preserves System cards from other batches,
+        // so echoes re-insert copies — an exponential duplicate loop). A reply
+        // with zero cards for a window that has observations counts as a failed
+        // run instead of silently wiping good cards from the range.
+        cards.removeAll { card in
+          card.category.trimmingCharacters(in: .whitespacesAndNewlines)
+            .caseInsensitiveCompare("System") == .orderedSame
+            || card.title.trimmingCharacters(in: .whitespacesAndNewlines)
+              .caseInsensitiveCompare("Processing failed") == .orderedSame
+        }
+        if cards.isEmpty && !observations.isEmpty {
+          throw NSError(
+            domain: "DayflowLLMValidation", code: 1,
+            userInfo: [
+              NSLocalizedDescriptionKey:
+                "Model returned no timeline cards for a window with observations"
+            ])
+        }
+
         let usedGemmaForCardGeneration =
           activeContext.fallbackState?.usedGemmaForCardGeneration == true
         let isBackupGenerated = usedProviderBackup || usedGemmaForCardGeneration
