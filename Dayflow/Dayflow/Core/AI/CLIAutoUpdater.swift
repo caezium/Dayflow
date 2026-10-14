@@ -6,8 +6,23 @@ import Foundation
 enum CLIAutoUpdater {
   private static let timeout: TimeInterval = 5 * 60
 
+  /// Fork: silent background updates of the user's own dev tooling are off
+  /// unless explicitly opted in — the same policy that keeps Sparkle's
+  /// auto-update disabled. A `claude`/`codex` upgrade mid-session is the
+  /// user's call, not the app's. Opt in with:
+  ///   defaults write teleportlabs.com.Dayflow cliAutoUpdateEnabled -bool true
+  static let enabledDefaultsKey = "cliAutoUpdateEnabled"
+
+  static var isEnabled: Bool {
+    UserDefaults.standard.object(forKey: enabledDefaultsKey) as? Bool ?? false
+  }
+
   /// Updates only the CLIs the user has routed as primary or backup provider.
   static func updateProviderCLIs() {
+    guard isEnabled else {
+      print("[CLIAutoUpdater] Disabled (fork default); skipping provider CLI updates")
+      return
+    }
     guard let routing = try? LLMProviderRoutingStore.load() else { return }
     let providers = [routing.primary, routing.secondary]
     let tools = [ChatCLITool.codex, ChatCLITool.claude].filter {
