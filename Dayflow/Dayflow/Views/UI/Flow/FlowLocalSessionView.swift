@@ -19,6 +19,9 @@ struct FlowLocalSessionView: View {
   @State private var durationMinutes = 50
   @State private var alwaysOn = false
   @State private var alertStyle: FlowAlertStyle = .friendly
+  /// This week's focus numbers — the same snapshot the hosted Flow paywall
+  /// shows, surfaced natively (the Weekly tab has the full heat map).
+  @State private var focusSnapshot: WeeklyFlowFocusSnapshot?
 
   private static let durationChoices = [15, 25, 50, 90]
   @Environment(\.dayflowTheme) private var theme
@@ -39,6 +42,40 @@ struct FlowLocalSessionView: View {
     }
     .padding(32)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onAppear {
+      // The early-bird card (or menu bar) asked for a session before this
+      // view existed; consume the flag the way the web page's bridge would.
+      if mirror.pendingStartSession {
+        mirror.pendingStartSession = false
+      }
+      loadFocusSnapshot()
+    }
+  }
+
+  private func loadFocusSnapshot() {
+    let categories = CategoryStore.shared.categories
+    Task {
+      let snapshot = await Task.detached(priority: .userInitiated) {
+        let range = WeeklyDateRange.containing(Date())
+        let cards = StorageManager.shared.fetchTimelineCardsByTimeRange(
+          from: range.weekStart, to: range.weekEnd)
+        return WeeklyDashboardBuilder.buildFlowFocus(
+          cards: cards, categories: categories, weekRange: range)
+      }.value
+      await MainActor.run { focusSnapshot = snapshot }
+    }
+  }
+
+  private var focusSummaryLine: some View {
+    Group {
+      if let snapshot = focusSnapshot, snapshot.trackedMinutes > 0 {
+        Text(
+          "This week: \(LocalizedDuration.string(Double(snapshot.trackedMinutes) * 60, style: .abbreviated)) tracked · \(LocalizedDuration.string(Double(snapshot.distractedMinutes) * 60, style: .abbreviated)) distracted"
+        )
+        .font(.custom("Figtree", size: 12))
+        .foregroundColor(theme.textSecondary)
+      }
+    }
   }
 
   // MARK: - Idle: session setup
@@ -102,6 +139,8 @@ struct FlowLocalSessionView: View {
         .buttonStyle(.borderedProminent)
         .tint(accent)
         .keyboardShortcut(.defaultAction)
+
+      focusSummaryLine
     }
   }
 
