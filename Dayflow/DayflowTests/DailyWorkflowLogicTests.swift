@@ -90,11 +90,16 @@ final class DailyWorkflowLogicTests: XCTestCase {
   // MARK: - formatters
 
   func testFormatAxisHourLabel() {
-    XCTAssertEqual(formatAxisHourLabel(fromAbsoluteHour: 0), "12am")
-    XCTAssertEqual(formatAxisHourLabel(fromAbsoluteHour: 9), "9am")
-    XCTAssertEqual(formatAxisHourLabel(fromAbsoluteHour: 12), "12pm")
-    XCTAssertEqual(formatAxisHourLabel(fromAbsoluteHour: 13), "1pm")
-    XCTAssertEqual(formatAxisHourLabel(fromAbsoluteHour: 24), "12am")  // wraps
+    // Upstream's label is locale-aware ("9am" vs "09"), so assert the
+    // normalization contract rather than a specific locale's strings.
+    XCTAssertEqual(
+      formatAxisHourLabel(fromAbsoluteHour: 24), formatAxisHourLabel(fromAbsoluteHour: 0))
+    XCTAssertEqual(
+      formatAxisHourLabel(fromAbsoluteHour: 25), formatAxisHourLabel(fromAbsoluteHour: 1))
+    XCTAssertEqual(
+      formatAxisHourLabel(fromAbsoluteHour: -1), formatAxisHourLabel(fromAbsoluteHour: 23))
+    XCTAssertNotEqual(
+      formatAxisHourLabel(fromAbsoluteHour: 9), formatAxisHourLabel(fromAbsoluteHour: 13))
   }
 
   func testFormatCount() {
