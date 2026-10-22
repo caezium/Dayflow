@@ -16,6 +16,9 @@ final class LaunchAtLoginManager: ObservableObject {
   /// turn it back on after someone switches it off.
   private static let defaultAppliedKey = "launchAtLoginDefaultApplied"
 
+  /// Fork: opt-in switch for the one-time automatic registration above. Default off.
+  static let autoEnableDefaultsKey = "launchAtLoginAutoEnableEnabled"
+
   private let logger = Logger(subsystem: "com.dayflow.app", category: "launch_at_login")
 
   private init() {
@@ -98,6 +101,12 @@ final class LaunchAtLoginManager: ObservableObject {
   /// we leave it off.
   func enableByDefaultIfNeeded(source: String) {
     let defaults = UserDefaults.standard
+    // Fork: registering a login item is a change outside the app's own
+    // container, made here without the user asking. Keep it behind an opt-in,
+    // the same policy as CLIAutoUpdater and the Sparkle flags; the Settings
+    // toggle (setEnabled) stays available either way. Opt in with:
+    //   defaults write teleportlabs.com.Dayflow launchAtLoginAutoEnableEnabled -bool true
+    guard defaults.object(forKey: Self.autoEnableDefaultsKey) as? Bool ?? false else { return }
     guard !defaults.bool(forKey: Self.defaultAppliedKey) else { return }
     defaults.set(true, forKey: Self.defaultAppliedKey)
 
