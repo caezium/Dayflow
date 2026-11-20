@@ -54,13 +54,29 @@ extension GeminiDirectProvider {
     let accessibilityLog = await OneStepTimelineAccessibilityLog.load(
       windowStart: windowStart, windowEnd: windowEnd, batchId: batchId)
     let rules = timelineRules(categories: context.categories)
-    let inputs = timelineInputs(
+    var inputs = timelineInputs(
       video: video,
       previousCards: context.existingCards,
       windowStart: windowStart,
       windowEnd: windowEnd,
       accessibilityLog: accessibilityLog
     )
+
+    // Fork: the one-step path bypasses LLMService's two-step grounding block.
+    // Preserve the same preference-controlled usage and OCR context for this batch.
+    let groundingStart = Date(timeIntervalSince1970: TimeInterval(windowStart))
+    let groundingEnd = Date(timeIntervalSince1970: TimeInterval(windowEnd))
+    if UsagePreferences.feedGroundTruthToAI,
+      let usage = await UsageGroundTruth.shared.promptSection(
+        from: groundingStart, to: groundingEnd)
+    {
+      inputs += "\n\n" + usage
+    }
+    if UsagePreferences.useScreenTextOCR,
+      let ocr = await ScreenTextOCR.shared.screenText(from: groundingStart, to: groundingEnd)
+    {
+      inputs += "\n\n" + ocr
+    }
 
     // The window stands in for the observations the two-step path would have, so the shared
     // one-step validator checks the cards against real timestamps (midnight included): they
