@@ -17,7 +17,8 @@ final class GeminiAPIHelperTests: XCTestCase {
     XCTAssertEqual(requests.count, 1)
     XCTAssertEqual(requests.first?.httpMethod, "GET")
     XCTAssertEqual(requests.first?.url?.path, "/v1beta/models")
-    XCTAssertTrue(requests.first?.url?.query?.contains("key=test-key") == true)
+    XCTAssertEqual(requests.first?.value(forHTTPHeaderField: "x-goog-api-key"), "test-key")
+    XCTAssertEqual(requests.first?.url?.query, "pageSize=1")
   }
 
   func testConnectionReportsAnInvalidKey() async throws {
