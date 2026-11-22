@@ -33,8 +33,31 @@ final class FrameStore: @unchecked Sendable {
   private var readers: [String: SegmentReader] = [:]
   private var readerOrder: [String] = []
   private let readerCacheLimit = 4
+  // Readers retain decoder buffers between reads. Release them after a burst ends.
+  private let readerIdleTimeout: TimeInterval = 30
+  private var readerIdleGeneration: UInt64 = 0
+  private var idleClose: DispatchWorkItem?
+  private let scheduleReaderCleanup: ReaderCleanupScheduler
 
-  private init() {}
+  typealias ReaderCleanupScheduler = (
+    TimeInterval, @escaping @Sendable () -> Void
+  ) -> DispatchWorkItem
+
+  init(scheduleReaderCleanup: @escaping ReaderCleanupScheduler = { delay, action in
+    let work = DispatchWorkItem(block: action)
+    DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + delay, execute: work)
+    return work
+  }) {
+    self.scheduleReaderCleanup = scheduleReaderCleanup
+  }
+
+  deinit { idleClose?.cancel() }
+
+  var cachedReaderCount: Int {
+    readLock.lock()
+    defer { readLock.unlock() }
+    return readers.count
+  }
 
   // MARK: - Writing
 
@@ -144,7 +167,11 @@ final class FrameStore: @unchecked Sendable {
     }
 
     readLock.lock()
-    defer { readLock.unlock() }
+    defer {
+      // Start the idle period after decoding finishes, including failed reads.
+      scheduleIdleCloseLocked()
+      readLock.unlock()
+    }
 
     guard let reader = reader(forPath: screenshot.filePath),
       let pixelBuffer = reader.frame(at: frameIndex)
@@ -154,6 +181,25 @@ final class FrameStore: @unchecked Sendable {
     VTCreateCGImageFromCVPixelBuffer(pixelBuffer, options: nil, imageOut: &decoded)
     guard let image = decoded else { return nil }
     return Self.downscaled(image, maxPixelSize: maxPixelSize)
+  }
+
+  /// Must be called with `readLock` held. The scheduler enqueues work without running it inline.
+  private func scheduleIdleCloseLocked() {
+    idleClose?.cancel()
+    idleClose = nil
+    readerIdleGeneration &+= 1
+    guard !readers.isEmpty else { return }
+    let generation = readerIdleGeneration
+    idleClose = scheduleReaderCleanup(readerIdleTimeout) { [weak self] in
+      guard let self else { return }
+      self.readLock.lock()
+      defer { self.readLock.unlock() }
+      // Cancellation cannot stop a callback that already started and is waiting for this lock.
+      guard self.readerIdleGeneration == generation else { return }
+      self.readers.removeAll()
+      self.readerOrder.removeAll()
+      self.idleClose = nil
+    }
   }
 
   /// Must be called with `readLock` held.
@@ -365,6 +411,9 @@ private final class SegmentReader {
     self.asset = asset
     self.track = track
   }
+
+  // Release decoder buffers even if an autorelease pool still retains the AVAssetReader.
+  deinit { reader?.cancelReading() }
 
   func frame(at index: Int) -> CVPixelBuffer? {
     let canContinue =
