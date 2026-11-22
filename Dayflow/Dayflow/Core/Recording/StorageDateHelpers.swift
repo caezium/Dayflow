@@ -8,12 +8,15 @@ import GRDB
 import Sentry
 
 extension DateFormatter {
-  static let yyyyMMdd: DateFormatter = {
+  static var yyyyMMdd: DateFormatter {
     let formatter = DateFormatter()
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.calendar = Calendar(identifier: .gregorian)
     formatter.dateFormat = "yyyy-MM-dd"
+    // Take a fresh timezone snapshot after travel, without mutating a shared formatter.
     formatter.timeZone = Calendar.current.timeZone
     return formatter
-  }()
+  }
 }
 
 extension Date {

@@ -40,13 +40,6 @@ enum TimelineActivityLoader {
   private static let failedTitle = "Processing failed"
   private static let failureGroupingGapTolerance: TimeInterval = 60
 
-  private static let timeFormatter: DateFormatter = {
-    let formatter = DateFormatter()
-    formatter.dateFormat = "h:mm a"
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    return formatter
-  }()
-
   static func dayPayload(
     for selectedDate: Date,
     storageManager: StorageManaging = StorageManager.shared,
@@ -103,13 +96,19 @@ enum TimelineActivityLoader {
 
   static func buildActivities(from cards: [TimelineCard]) -> [TimelineActivity] {
     let calendar = Calendar.current
+    let dayFormatter = DateFormatter.yyyyMMdd
+    dayFormatter.timeZone = calendar.timeZone
+    let timeFormatter = DateFormatter()
+    timeFormatter.locale = Locale(identifier: "en_US_POSIX")
+    timeFormatter.dateFormat = "h:mm a"
+    timeFormatter.timeZone = calendar.timeZone
     var results: [TimelineActivity] = []
     var idCounts: [String: Int] = [:]
     results.reserveCapacity(cards.count)
 
     for card in cards {
       guard
-        let baseDay = DateFormatter.yyyyMMdd.date(from: card.day),
+        let baseDay = dayFormatter.date(from: card.day),
         let parsedStart = timeFormatter.date(from: card.startTimestamp),
         let parsedEnd = timeFormatter.date(from: card.endTimestamp)
       else {

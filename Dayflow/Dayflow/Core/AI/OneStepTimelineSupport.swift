@@ -176,15 +176,23 @@ enum OneStepTimelineObservations {
     guard parts.count == 2, let hour = Int(parts[0]), let minute = Int(parts[1]),
       (1...12).contains(hour), (0...59).contains(minute), meridiem == "AM" || meridiem == "PM"
     else { return nil }
-    let minutesOfDay = (hour % 12 + (meridiem == "PM" ? 12 : 0)) * 60 + minute
+    let clockHour = hour % 12 + (meridiem == "PM" ? 12 : 0)
 
     let anchorDate = Date(timeIntervalSince1970: TimeInterval(anchor))
     let midnight = calendar.startOfDay(for: anchorDate)
-    let candidates = [-1, 0, 1].compactMap { dayOffset -> Int? in
-      guard let day = calendar.date(byAdding: .day, value: dayOffset, to: midnight),
-        let date = calendar.date(byAdding: .minute, value: minutesOfDay, to: day)
-      else { return nil }
-      return Int(date.timeIntervalSince1970)
+    let candidates = [-1, 0, 1].flatMap { dayOffset -> [Int] in
+      guard let day = calendar.date(byAdding: .day, value: dayOffset, to: midnight) else {
+        return []
+      }
+      // Wall-clock labels aren't elapsed minutes on a DST transition day. Include both
+      // occurrences of a repeated time so the batch anchor chooses the correct one.
+      return [Calendar.RepeatedTimePolicy.first, .last].compactMap { policy in
+        guard let date = calendar.date(
+          bySettingHour: clockHour, minute: minute, second: 0, of: day,
+          matchingPolicy: .strict, repeatedTimePolicy: policy, direction: .forward
+        ), calendar.isDate(date, inSameDayAs: day) else { return nil }
+        return Int(date.timeIntervalSince1970)
+      }
     }
     return candidates.min { abs($0 - anchor) < abs($1 - anchor) }
   }
