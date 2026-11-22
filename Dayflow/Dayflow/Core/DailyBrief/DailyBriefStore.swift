@@ -104,9 +104,9 @@ final class DailyBriefStore: ObservableObject {
     return killSwitch != false
   }
 
-  /// The "Daily brief" toggle in Settings. On by default.
+  /// The "Daily brief" toggle in Settings. Sharing the day's context requires explicit opt-in.
   var isUserEnabled: Bool {
-    get { UserDefaults.standard.object(forKey: Self.userEnabledKey) as? Bool ?? true }
+    get { UserDefaults.standard.object(forKey: Self.userEnabledKey) as? Bool ?? false }
     set {
       objectWillChange.send()
       UserDefaults.standard.set(newValue, forKey: Self.userEnabledKey)

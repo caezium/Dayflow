@@ -63,8 +63,7 @@ enum ScreenshotConfig {
 }
 
 /// Settings for the accessibility recorder (clicks, typing and screen text,
-/// written next to the recordings). Off for users until it's been checked for
-/// CPU use and file size; on in debug builds.
+/// written next to the recordings). Exact text capture requires explicit opt-in in every build.
 enum AccessibilityCaptureConfig {
   /// Overrides the default when set:
   /// `defaults write teleportlabs.com.Dayflow accessibilityCaptureEnabled -bool YES`
@@ -78,10 +77,6 @@ enum AccessibilityCaptureConfig {
     if let stored = UserDefaults.standard.object(forKey: enabledKey) as? Bool {
       return stored
     }
-    #if DEBUG
-      return true
-    #else
-      return false
-    #endif
+    return false
   }
 }

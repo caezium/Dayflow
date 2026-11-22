@@ -75,7 +75,8 @@ enum OneStepTimelineAccessibilityLog {
   /// prompt is then exactly what it was without one. Reading and condensing can't fail the
   /// batch: a log that can't be read is the same as no log.
   static func load(windowStart: Int, windowEnd: Int, batchId: Int64?) async -> String? {
-    await Task.detached(priority: .utility) {
+    guard AccessibilityCaptureConfig.isEnabled else { return nil }
+    return await Task.detached(priority: .utility) {
       let startedAt = Date()
       let start = Date(timeIntervalSince1970: TimeInterval(windowStart))
       let end = Date(timeIntervalSince1970: TimeInterval(windowEnd))
