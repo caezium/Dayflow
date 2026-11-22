@@ -70,12 +70,18 @@ final class OpenAICompatibleProviderTests: XCTestCase {
       batchObservations: [], existingCards: [previous], currentTime: Date(), categories: [],
       hasPreviousCardWithinFiveMinutes: true)
     var requests = 0
+    var originalPrompt: String?
     let provider = OpenAICompatibleProvider(configuration: configuration()) { request, _, _ in
       requests += 1
       let prompt = request.messages[1].content[0].text!
-      XCTAssertTrue(prompt.contains("Previous cards:"))
       XCTAssertTrue(prompt.contains("Release notes"))
-      if requests == 1 { return "[]" }
+      XCTAssertTrue(prompt.contains(previous.summary))
+      XCTAssertTrue(prompt.contains(previous.detailedSummary))
+      if requests == 1 {
+        originalPrompt = prompt
+        return "[]"
+      }
+      XCTAssertTrue(prompt.hasPrefix(try XCTUnwrap(originalPrompt)))
       XCTAssertTrue(prompt.contains("PREVIOUS ATTEMPT FAILED"))
       return "```json\n" + String(data: try JSONEncoder().encode([previous]), encoding: .utf8)!
         + "\n```"

@@ -153,7 +153,7 @@ final class ClaudeCLIExecutionProfileTests: XCTestCase {
     XCTAssertEqual(try argument(after: "--name", in: correction), "dayflow-transcription")
   }
 
-  func testExistingClaudeCommandOnlyAddsRequestedReasoningEffort() throws {
+  func testExistingClaudeCommandKeepsJSONOutputAndRequestedReasoningEffort() throws {
     let parts = runner.buildClaudeCommandParts(
       prompt: "Hello",
       imagePaths: [],
@@ -163,10 +163,13 @@ final class ClaudeCLIExecutionProfileTests: XCTestCase {
     )
 
     XCTAssertEqual(
-      Array(parts.prefix(7)),
-      ["claude", "-p", "--model", "sonnet", "--effort", "medium", "--dangerously-skip-permissions"]
+      Array(parts.prefix(9)),
+      [
+        "claude", "-p", "--output-format", "json", "--model", "sonnet", "--effort", "medium",
+        "--dangerously-skip-permissions",
+      ]
     )
-    XCTAssertFalse(parts.contains("--output-format"))
+    XCTAssertEqual(try argument(after: "--output-format", in: parts), "json")
     XCTAssertFalse(parts.contains("--safe-mode"))
     XCTAssertFalse(parts.contains("--bare"))
   }
