@@ -780,7 +780,7 @@ private struct DailyBriefPromptEditor: View {
         .foregroundStyle(theme.textPrimary)
 
       Text(
-        "The brief is written by two Claude runs at once: one for the docket, one for every other section. Placeholders are filled in at run time. Used from the next run, so Retry picks it up."
+        "The brief is written by two runs of your selected provider at once: one for the docket, one for every other section. Placeholders are filled in at run time. Used from the next run, so Retry picks it up."
       )
       .font(DailyBriefFonts.sans(12))
       .foregroundStyle(DailyBriefColors.muted(theme))

@@ -3,7 +3,7 @@
 //  Dayflow
 //
 //  Builds one day's Daily brief: gathers yesterday's cards and a screenshot per
-//  card, then runs two `claude -p` runs at the same time, each with web
+//  card, then runs two calls through the selected CLI at the same time, each with web
 //  search, the user's own connectors (read-only), and Dayflow's MCP server. One
 //  run writes the docket; the other writes every other section and is the only
 //  one that sees the screenshots. The two answers are merged in code into one
@@ -26,7 +26,7 @@ struct DailyBriefGeneration: Sendable {
 }
 
 enum DailyBriefGenerator {
-  /// The two Claude runs that write a brief. Each has its own prompt, schema, and transcript.
+  /// The two runs that write a brief. Each has its own prompt, schema, and transcript.
   enum Part: String, CaseIterable, Sendable {
     /// "Your docket today" only.
     case docket
@@ -68,6 +68,7 @@ enum DailyBriefGenerator {
   }
 
   struct Input: Sendable {
+    let provider: DailyBriefProvider
     /// The logical day the brief is for, yyyy-MM-dd.
     let day: String
     /// The day whose activity it is built from (usually yesterday), yyyy-MM-dd.
@@ -156,6 +157,7 @@ enum DailyBriefGenerator {
     }
 
     let candidates = exportCandidates(for: cards, into: candidatesDirectory)
+    let codexAccess = input.provider == .codex ? try DailyBriefCodexAccess.discover(in: runDirectory) : nil
     let values: [String: String] = [
       "USER_NAME": userName(),
       "TODAY_LONG": longDate(input.day),
@@ -188,7 +190,7 @@ enum DailyBriefGenerator {
       let outcome = Result {
         try runPart(
           part, input: input, values: partValues, runDirectory: runDirectory,
-          candidatesDirectory: candidatesDirectory)
+          candidatesDirectory: candidatesDirectory, codexAccess: codexAccess)
       }
       outcomesLock.withLock { outcomes[part] = outcome }
     }
@@ -259,10 +261,10 @@ enum DailyBriefGenerator {
     let items: [DailyBriefDocketItem]?
   }
 
-  /// Fills in one part's prompt, runs Claude, and decodes the answer.
+  /// Fills in one part's prompt, runs the selected provider, and decodes the same answer schema.
   private static func runPart(
     _ part: Part, input: Input, values: [String: String], runDirectory: URL,
-    candidatesDirectory: URL
+    candidatesDirectory: URL, codexAccess: DailyBriefCodexAccess?
   ) throws -> PartRun {
     let override =
       input.promptOverrides[part]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
@@ -280,20 +282,16 @@ enum DailyBriefGenerator {
 
     let options = try commandOptions(
       part: part, runDirectory: runDirectory, candidatesDirectory: candidatesDirectory)
-    func runClaude(model: String) throws -> StructuredClaudeResult {
-      try runStructuredClaude(
+    let run = try runStructured(
+        provider: input.provider, codexAccess: codexAccess,
         prompt: prompt,
         options: options,
         workingDirectory: runDirectory,
         timeoutSeconds: runTimeoutSeconds,
         transcriptURL: DailyBriefStore.transcriptURL(for: input.day, part: part),
         tooLongMessage:
-          "Claude took longer than 20 minutes on your brief, so Dayflow stopped it. Try again.",
-        model: model
+          "\(input.provider.displayName) took longer than 20 minutes on your brief, so Dayflow stopped it. Try again."
       )
-    }
-
-    let run = try runClaude(model: model)
 
     var stats = run.stats
     stats.promptCharacters = prompt.count
@@ -311,7 +309,7 @@ enum DailyBriefGenerator {
       }
     } catch {
       print("[DailyBrief] Could not decode the \(part.rawValue) answer: \(error)")
-      throw GenerationError(message: "Claude's answer came back in an unexpected shape. Try again.")
+      throw GenerationError(message: "\(input.provider.displayName)'s answer came back in an unexpected shape. Try again.")
     }
   }
 
@@ -870,7 +868,7 @@ enum DailyBriefGenerator {
 
   // MARK: - Running Claude
 
-  struct StructuredClaudeResult {
+  struct StructuredBriefResult {
     /// The JSON the model produced.
     let json: Data
     /// Model, cost, tokens, turns, and tool calls. The caller fills in the rest.
@@ -888,7 +886,7 @@ enum DailyBriefGenerator {
     transcriptURL: URL? = nil,
     tooLongMessage: String,
     model: String = DailyBriefGenerator.model
-  ) throws -> StructuredClaudeResult {
+  ) throws -> StructuredBriefResult {
     let runner = ChatCLIProcessRunner()
     let run: ChatCLIRunResult
     do {
@@ -919,13 +917,13 @@ enum DailyBriefGenerator {
         JSONSerialization.isValidJSONObject(structured),
         let data = try? JSONSerialization.data(withJSONObject: structured)
       {
-        return StructuredClaudeResult(
+        return StructuredBriefResult(
           json: data, stats: runStats(envelope: envelope, events: events))
       }
       if let text = envelope["result"] as? String,
         let data = jsonObjectData(in: text, runner: runner)
       {
-        return StructuredClaudeResult(
+        return StructuredBriefResult(
           json: data, stats: runStats(envelope: envelope, events: events))
       }
     }
@@ -1127,7 +1125,7 @@ enum DailyBriefGenerator {
   }
 
   /// The first JSON object in model text, ignoring ``` fences and prose around it.
-  private static func jsonObjectData(in text: String, runner: ChatCLIProcessRunner) -> Data? {
+  static func jsonObjectData(in text: String, runner: ChatCLIProcessRunner) -> Data? {
     let cleaned =
       text
       .replacingOccurrences(of: "```json", with: "")

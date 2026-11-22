@@ -4,7 +4,7 @@
 //
 //  "Everything you completed": turns the completed items saved in past briefs
 //  into a review-ready summary for a range (last 7 days, quarter to date...).
-//  One `claude -p` call with no tools; synchronous and blocking.
+//  One call through the selected CLI with no tools; synchronous and blocking.
 //
 
 import Foundation
@@ -44,12 +44,20 @@ enum DailyBriefRangeSummarizer {
       jsonSchema: DailyBriefGenerator.jsonString(schema),
       name: "dayflow-daily-brief-summary"
     )
-    let run = try DailyBriefGenerator.runStructuredClaude(
+    let provider = DailyBriefProvider.selected
+    if let problem = provider.readinessProblem() {
+      throw DailyBriefGenerator.GenerationError(message: problem)
+    }
+    let directory = FileManager.default.temporaryDirectory.appendingPathComponent("dayflow-brief-summary-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let run = try DailyBriefGenerator.runStructured(
+      provider: provider,
       prompt: prompt(entries: ordered, range: range, startDay: startDay, endDay: endDay),
       options: options,
-      workingDirectory: FileManager.default.temporaryDirectory,
+      workingDirectory: directory,
       timeoutSeconds: timeoutSeconds,
-      tooLongMessage: "Claude took too long on the summary, so Dayflow stopped it. Try again."
+      tooLongMessage: "\(provider.displayName) took too long on the summary, so Dayflow stopped it. Try again."
     )
 
     let output: Output
@@ -58,7 +66,7 @@ enum DailyBriefRangeSummarizer {
     } catch {
       print("[DailyBrief] Could not decode the range summary: \(error)")
       throw DailyBriefGenerator.GenerationError(
-        message: "Claude's summary came back in an unexpected shape. Try again.")
+        message: "\(provider.displayName)'s summary came back in an unexpected shape. Try again.")
     }
 
     let projects = output.projects.compactMap { project -> DailyBriefSummaryProject? in

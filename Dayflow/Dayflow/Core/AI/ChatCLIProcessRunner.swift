@@ -1520,6 +1520,7 @@ struct ChatCLIProcessRunner {
     claudeSessionMode: ClaudeCLISessionMode = .ephemeral,
     claudeInlineImages: [ClaudeInlineImage] = [],
     codexResumeSessionId: String? = nil,
+    codexStructuredOutput: CodexCLIStructuredOutputOptions? = nil,
     codexConfigOverrides: [String] = [],
     environmentOverrides: [String: String] = [:],
     timeoutSeconds: TimeInterval = Constants.timeoutSeconds
@@ -1536,6 +1537,7 @@ struct ChatCLIProcessRunner {
       claudeSessionMode: claudeSessionMode,
       claudeInlineImages: claudeInlineImages,
       codexResumeSessionId: codexResumeSessionId,
+      codexStructuredOutput: codexStructuredOutput,
       codexConfigOverrides: codexConfigOverrides,
       processEnvironment: environmentOverrides,
       hasRetriedInvalidTransport: false,
@@ -1556,6 +1558,7 @@ struct ChatCLIProcessRunner {
     claudeSessionMode: ClaudeCLISessionMode,
     claudeInlineImages: [ClaudeInlineImage] = [],
     codexResumeSessionId: String? = nil,
+    codexStructuredOutput: CodexCLIStructuredOutputOptions? = nil,
     codexConfigOverrides: [String] = [],
     processEnvironment: [String: String],
     hasRetriedInvalidTransport: Bool,
@@ -1600,7 +1603,9 @@ struct ChatCLIProcessRunner {
       // config loading fails with "invalid transport", and the fallback
       // below moves the run into a temporary CODEX_HOME where `exec resume`
       // finds no rollout.
-      if Self.codexSupportsIgnoringUserConfig(
+      if let codexStructuredOutput {
+        cmdParts.append(contentsOf: codexStructuredOutput.commandArguments)
+      } else if Self.codexSupportsIgnoringUserConfig(
         executableCommand: executableCommand, resuming: codexResumeSessionId != nil)
       {
         cmdParts.append("--ignore-user-config")
@@ -1614,12 +1619,14 @@ struct ChatCLIProcessRunner {
           cmdParts.append(contentsOf: ["--config", "mcp_servers.\(serverName).enabled=false"])
         }
       }
-      cmdParts.append(contentsOf: ["-c", "rmcp_client=false", "-c", "web_search=disabled"])
+      if codexStructuredOutput == nil {
+        cmdParts.append(contentsOf: ["-c", "rmcp_client=false", "-c", "web_search=disabled"])
+      }
       for path in imagePaths {
         cmdParts.append(contentsOf: ["--image", LoginShellRunner.shellEscape(path)])
       }
       cmdParts.append("--")
-      cmdParts.append(LoginShellRunner.shellEscape(prompt))
+      cmdParts.append(codexStructuredOutput == nil ? LoginShellRunner.shellEscape(prompt) : "-")
     case .claude:
       cmdParts = Self.removingUnsupportedClaudeFlags(
         buildClaudeCommandParts(
@@ -1649,7 +1656,9 @@ struct ChatCLIProcessRunner {
       environment: effectiveProcessEnvironment
     )
     let standardInput: Data?
-    if tool == .claude, claudeProfile != nil, !claudeInlineImages.isEmpty {
+    if tool == .codex, codexStructuredOutput != nil {
+      standardInput = prompt.data(using: .utf8)
+    } else if tool == .claude, claudeProfile != nil, !claudeInlineImages.isEmpty {
       standardInput = try claudeInlineImagesPayload(prompt: prompt, images: claudeInlineImages)
     } else {
       standardInput = standardInputPayload(
@@ -1757,6 +1766,7 @@ struct ChatCLIProcessRunner {
         claudeSessionMode: claudeSessionMode,
         claudeInlineImages: claudeInlineImages,
         codexResumeSessionId: codexResumeSessionId,
+        codexStructuredOutput: codexStructuredOutput,
         codexConfigOverrides: codexConfigOverrides,
         processEnvironment: effectiveProcessEnvironment,
         hasRetriedInvalidTransport: hasRetriedInvalidTransport,
@@ -1765,7 +1775,7 @@ struct ChatCLIProcessRunner {
       )
     }
 
-    if process.terminationStatus != 0,
+    if codexStructuredOutput == nil, process.terminationStatus != 0,
       let fallback = codexFallbackContextIfNeeded(
         tool: tool,
         stderr: stderr,
@@ -1789,6 +1799,7 @@ struct ChatCLIProcessRunner {
         claudeSessionMode: claudeSessionMode,
         claudeInlineImages: claudeInlineImages,
         codexResumeSessionId: codexResumeSessionId,
+        codexStructuredOutput: codexStructuredOutput,
         codexConfigOverrides: codexConfigOverrides,
         processEnvironment: fallback.environment,
         hasRetriedInvalidTransport: true,

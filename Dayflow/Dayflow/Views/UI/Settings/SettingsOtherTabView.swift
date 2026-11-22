@@ -125,12 +125,23 @@ struct SettingsOtherTabView: View {
 
         if dailyBrief.isEligible {
           SettingsRow(
+            label: "Daily brief provider",
+            subtitle: "Uses your signed-in account. Each provider uses its own connected services."
+          ) {
+            Picker("Daily brief provider", selection: Binding(
+              get: { dailyBrief.provider }, set: { dailyBrief.provider = $0 }
+            )) {
+              ForEach(DailyBriefProvider.allCases, id: \.self) { provider in
+                Text(provider.title).tag(provider)
+              }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .frame(width: 210)
+          }
+          SettingsRow(
             label: String(localized: "Daily brief"),
-            subtitle:
-              String(
-                localized:
-                  "Each morning, Claude Code reads yesterday's timeline and your connected apps and writes you a brief. Runs on your Claude plan."
-              )
+            subtitle: "When enabled, \(dailyBrief.provider.displayName) uses your timeline, screenshots, recent agent chats, web search and connected services to write a morning brief. This context is sent to your selected provider."
           ) {
             SettingsToggle(
               isOn: Binding(

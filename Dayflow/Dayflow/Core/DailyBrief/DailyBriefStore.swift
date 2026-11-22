@@ -91,17 +91,17 @@ final class DailyBriefStore: ObservableObject {
   /// Automatic runs per day before giving up. The Retry button ignores this.
   static let maxAutomaticAttemptsPerDay = 2
 
-  /// Whether this user can get the brief at all: allowlisted, or Claude Code is
-  /// their main timeline provider and the kill switch isn't off.
+  /// The native brief runs on the user's CLI account, independently of the timeline provider.
   var isEligible: Bool {
-    if let email = DayflowAuthManager.shared.signedInEmail?.lowercased(),
-      Self.allowlistedEmails.contains(email)
-    {
-      return true
+    true
+  }
+
+  var provider: DailyBriefProvider {
+    get { .selected }
+    set {
+      objectWillChange.send()
+      UserDefaults.standard.set(newValue.rawValue, forKey: DailyBriefProvider.preferenceKey)
     }
-    guard (try? LLMProviderRoutingStore.load())?.primary == .claude else { return false }
-    let killSwitch = AnalyticsService.shared.featureFlagValue(Self.killSwitchFlagKey) as? Bool
-    return killSwitch != false
   }
 
   /// The "Daily brief" toggle in Settings. Sharing the day's context requires explicit opt-in.
@@ -422,6 +422,7 @@ final class DailyBriefStore: ObservableObject {
       promptOverrides[part] = promptOverride(for: part)
     }
     let input = DailyBriefGenerator.Input(
+      provider: provider,
       day: day,
       sourceDay: sourceDay,
       trigger: trigger,
@@ -435,7 +436,7 @@ final class DailyBriefStore: ObservableObject {
 
     Task.detached(priority: .utility) {
       let result: Result<DailyBriefGeneration, Error>
-      if let problem = DailyBriefGenerator.claudeReadinessProblem() {
+      if let problem = input.provider.readinessProblem() {
         result = .failure(DailyBriefGenerator.GenerationError(message: problem))
       } else {
         result = Result { try DailyBriefGenerator.generate(input) }
