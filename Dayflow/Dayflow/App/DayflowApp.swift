@@ -3,6 +3,7 @@
 //  Dayflow
 //
 
+import AppKit
 import Sparkle
 import SwiftUI
 
@@ -256,6 +257,23 @@ struct AppRootView: View {
 }
 
 @main
+enum DayflowMain {
+  @MainActor
+  static func main() {
+    #if DEBUG
+      // XCTest injects its runtime before main. Keep its event loop alive without
+      // constructing the SwiftUI app or starting recording, jobs, and iCloud scans.
+      if NSClassFromString("XCTestCase") != nil {
+        NSApplication.shared.setActivationPolicy(.prohibited)
+        NSApplication.shared.run()
+        return
+      }
+    #endif
+
+    DayflowApp.main()
+  }
+}
+
 struct DayflowApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
   @AppStorage("didOnboard") private var didOnboard = false
